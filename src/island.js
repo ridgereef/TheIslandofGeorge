@@ -408,9 +408,17 @@ export function mountIsland(element, onTick, visualOptions={}) {
   const groundY=height(0,0);
   // George's initial camp: a clear, sheltered base with rearrangeable objects.
   const campRoot=new THREE.Group();scene.add(campRoot);
+  // A foundation follows the highest ground under the footprint, not just its centre.
+  const footprintGround=(x,z,radius=1)=>{
+    let top=height(x,z);
+    for(const [dx,dz] of [[radius,0],[-radius,0],[0,radius],[0,-radius],[radius*.7,radius*.7],[-radius*.7,radius*.7],[radius*.7,-radius*.7],[-radius*.7,-radius*.7]]){
+      top=Math.max(top,height(x+dx,z+dz));
+    }
+    return top;
+  };
   const placeCampObject=(geo,color,x,z,yOffset=0)=>{
     const obj=new THREE.Mesh(geo,new THREE.MeshStandardMaterial({color,roughness:.9}));
-    obj.position.set(x,height(x,z)+yOffset,z);obj.castShadow=true;obj.receiveShadow=true;
+    obj.position.set(x,footprintGround(x,z,geo.parameters?.radius??geo.parameters?.width/2??1)+yOffset+.12,z);obj.castShadow=true;obj.receiveShadow=true;
     campRoot.add(obj);return obj;
   };
   placeCampObject(new THREE.ConeGeometry(5,4.5,4),0x9d8b62,8,4,2.25).rotation.y=Math.PI/4;
@@ -424,7 +432,7 @@ export function mountIsland(element, onTick, visualOptions={}) {
     const positions=[[[8,4],[3,-3],[-5,-3]],[[9,-5],[-6,4],[4,8]],[[-8,-4],[7,7],[8,-7]]][campLayout];
     [campRoot.children[0],campRoot.children[3],campRoot.children[4]].forEach((o,i)=>{
       const [x,z]=positions[i];o.position.x=x;o.position.z=z;
-      o.position.y=height(x,z)+(i===0?2.25:i===1?.4:.55);
+      o.position.y=footprintGround(x,z,i===0?5:i===1?1.6:1)+(i===0?2.25:i===1?.4:.55)+.12;
     });
   };
   // One of each natural item; when Supabase is configured, render the shared item instances.
@@ -585,12 +593,12 @@ export function mountIsland(element, onTick, visualOptions={}) {
         entry.phase+=dt*10;
       }
       const ground=height(g.position.x,g.position.z);
-      g.position.y=ground+.65+(dist>.015?Math.max(0,Math.sin(entry.phase))*.14:0);
+      entry.phase+=dt*(dist>.015?8:2.5);g.position.y=ground+.65+Math.max(0,Math.sin(entry.phase))*(dist>.015?.3:.12);
     }
   };
   let rabbitRefresh;
   const loadRabbits=()=>{if(!itemUrl||!itemKey)return;fetch(itemUrl+'/rest/v1/island_rabbit_positions?select=id,x,z',{headers:{apikey:itemKey,Authorization:'Bearer '+itemKey}}).then(r=>r.ok?r.json():[]).then(renderRabbits).catch(error=>console.warn('Rabbit refresh unavailable:',error));};
-  loadRabbits();rabbitRefresh=window.setInterval(loadRabbits,15000);
+  loadRabbits();rabbitRefresh=window.setInterval(loadRabbits,5000);
 
   // One persistent reddish clay outcrop, made from a compact cluster of rocks.
   const clayRoot=new THREE.Group();scene.add(clayRoot);
@@ -613,8 +621,8 @@ export function mountIsland(element, onTick, visualOptions={}) {
   const renderClayFires=fires=>{
     fireRoot.clear();
     for(const fire of fires){
-      if(!fire.lit){const ash=new THREE.Mesh(new THREE.SphereGeometry(.44,8,5),new THREE.MeshStandardMaterial({color:0x77746c,roughness:1}));ash.scale.set(1,.12,.8);ash.position.set(Number(fire.x),height(Number(fire.x),Number(fire.z))+.04,Number(fire.z));fireRoot.add(ash);continue;}
-      const x=Number(fire.x),z=Number(fire.z),y=height(x,z);
+      if(!fire.lit){const ash=new THREE.Mesh(new THREE.SphereGeometry(.44,8,5),new THREE.MeshStandardMaterial({color:0x77746c,roughness:1}));ash.scale.set(1,.12,.8);ash.position.set(Number(fire.x),footprintGround(Number(fire.x),Number(fire.z),.8)+.08,Number(fire.z));fireRoot.add(ash);continue;}
+      const x=Number(fire.x),z=Number(fire.z),y=footprintGround(x,z,1)+.16;
       for(let i=0;i<3;i++){const log=new THREE.Mesh(fireLogGeo,fireLogMat);log.position.set(x,y+.17,z);log.rotation.set(Math.PI/2,i*Math.PI/3,0);fireRoot.add(log);}
       const flame=new THREE.Mesh(new THREE.ConeGeometry(.32,.95,7),flameMat);
       flame.position.set(x,y+.67,z);fireRoot.add(flame);
@@ -1017,5 +1025,5 @@ export function mountIsland(element, onTick, visualOptions={}) {
     wetness=THREE.MathUtils.clamp(wetness+dt*((weather.rain||swimming)? .018 : -.008),0,1);
     if(sv)wetness=Number(sv.wetness)/100;const feelsLike=weather.feelsLike??(temperature+daylight*(1-weather.cloud)*3)-(wetness*5);
     const thermal=feelsLike<12?'Cold':feelsLike>28?'Hot':'Comfortable';if(followGeorge){followTarget.copy(george.position).add(new THREE.Vector3(0,1.7,0));const delta=followTarget.sub(controls.target).multiplyScalar(1-Math.exp(-dt*3.5));controls.target.add(delta);camera.position.add(delta)}controls.update();constrainCamera();controls.update();renderer.render(scene,camera);if(elapsed-last>2){last=elapsed;onTick?.({daylight,phase:cycle,georgeX:george.position.x,georgeZ:george.position.z,weather:weatherLabel,temperature:Math.round(temperature),thermal,swimming,wetness:Math.round(wetness*100),weatherSource:weather.source||'Simulated fallback',wind:Math.round(weather.wind||0),freshwaterNearby:freshwaterAt(george.position.x,george.position.z),georgeMoving:moved,sitting,atCamp:Math.hypot(george.position.x,george.position.z)<9,resting:resting&&Math.hypot(george.position.x,george.position.z)<9})}};
-  animate();return ()=>{disposed=true;itemsDisposed=true;if(fishRefresh!==null)clearInterval(rabbitRefresh);clearInterval(fishRefresh);if(itemRefresh!==null)clearInterval(itemRefresh);if(cutTreeRefresh!==null)clearInterval(cutTreeRefresh);if(regrowthRefresh!==null)clearInterval(regrowthRefresh);if(carriedLogRefresh!==null)clearInterval(carriedLogRefresh);if(eventRefresh!==null)clearInterval(eventRefresh);if(sharedRefresh!==null)clearInterval(sharedRefresh);if(crateEventRefresh!==null)clearInterval(crateEventRefresh);if(cratePositionRefresh!==null)clearInterval(cratePositionRefresh);cancelAnimationFrame(frame);observer.disconnect();renderer.domElement.removeEventListener('pointerdown',onDown);window.removeEventListener('pointerup',onUp);window.removeEventListener('keydown',onKeyDown);window.removeEventListener('keyup',onKeyUp);window.removeEventListener('blur',onBlur);actions.remove();controls.dispose();renderer.dispose();renderer.domElement.remove();scene.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material){const mats=Array.isArray(o.material)?o.material:[o.material];mats.forEach(m=>m.dispose())}})};
+  animate();return ()=>{disposed=true;itemsDisposed=true;if(rabbitRefresh!==null)clearInterval(rabbitRefresh);if(fishRefresh!==null)clearInterval(fishRefresh);if(itemRefresh!==null)clearInterval(itemRefresh);if(cutTreeRefresh!==null)clearInterval(cutTreeRefresh);if(regrowthRefresh!==null)clearInterval(regrowthRefresh);if(carriedLogRefresh!==null)clearInterval(carriedLogRefresh);if(eventRefresh!==null)clearInterval(eventRefresh);if(sharedRefresh!==null)clearInterval(sharedRefresh);if(crateEventRefresh!==null)clearInterval(crateEventRefresh);if(cratePositionRefresh!==null)clearInterval(cratePositionRefresh);cancelAnimationFrame(frame);observer.disconnect();renderer.domElement.removeEventListener('pointerdown',onDown);window.removeEventListener('pointerup',onUp);window.removeEventListener('keydown',onKeyDown);window.removeEventListener('keyup',onKeyUp);window.removeEventListener('blur',onBlur);actions.remove();controls.dispose();renderer.dispose();renderer.domElement.remove();scene.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material){const mats=Array.isArray(o.material)?o.material:[o.material];mats.forEach(m=>m.dispose())}})};
 }
