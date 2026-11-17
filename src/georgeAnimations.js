@@ -60,6 +60,15 @@ export function createGeorgeAnimationController(root) {
         if (weight < .03) current=target;
       } else weight = Math.min(1,weight+dt*3);
       const t=seconds;
+      // A pickup/rummage pose must never persist into walking or idle.
+      // The GLB clips do not consistently key the torso, so explicitly restore
+      // the neutral torso when an interaction finishes.
+      if(!['pickup','putdown','rummage'].includes(current)){
+        for(const name of ['Hips','Spine']){
+          const bone=bones.get(name),base=bindRotations.get(name);
+          if(bone&&base)bone.quaternion.copy(base);
+        }
+      }
       // Explicitly reset the skull/neck every frame, including idle and walking.
       // This prevents an embedded animation or prior pose from leaving a swivel.
       aimHead(0,0,weight);
@@ -95,6 +104,18 @@ export function createGeorgeAnimationController(root) {
           offset('UpperLeg.L',-.55);offset('UpperLeg.R',-.55);
           offset('UpperArm.L',-1.15,0,-.22);offset('UpperArm.R',-1.15,0,.22);
           break;
+        case 'rummage': {
+          // Bend only during crate access, with arms extended and searching.
+          const reach=Math.sin(t*4.8),alternate=Math.sin(t*4.8+Math.PI);
+          offset('Hips',.36);offset('Spine',.78+.08*Math.sin(t*2));
+          offset('UpperLeg.L',-.32);offset('UpperLeg.R',-.32);
+          offset('UpperArm.L',-1.27+.20*reach,0,-.22+.09*Math.sin(t*2.4));
+          offset('UpperArm.R',-1.27+.20*alternate,0,.22+.09*Math.sin(t*2.1));
+          offset('LowerArm.L',-.55+.2*alternate);
+          offset('LowerArm.R',-.55+.2*reach);
+          aimHead(.16,.09*Math.sin(t*2));
+          break;
+        }
         case 'putdown':
           offset('Hips',.25);offset('Spine',.35);
           offset('UpperArm.L',-.9,0,-.2);offset('UpperArm.R',-.9,0,.2);
