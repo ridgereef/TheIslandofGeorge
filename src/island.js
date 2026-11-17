@@ -219,7 +219,7 @@ export function mountIsland(element, onTick) {
   const trunkMat=new THREE.MeshStandardMaterial({color:'#674b32'}),leafMat=new THREE.MeshStandardMaterial({color:'#326b3c'});
   // Shared collision footprints for the visible instanced trees and rocks.
   const obstacles=[],obstacleGrid=new Map(),CELL=20;
-  const treeObstacles=[],forestObstacles=[];
+  const treeObstacles=[],forestObstacles=[],regrowthObstacles=[];
   const gridKey=(x,z)=>Math.floor(x/CELL)+','+Math.floor(z/CELL);
   const registerObstacle=(x,z,radius)=>{
     const obstacle={x,z,radius};obstacles.push(obstacle);
@@ -232,7 +232,7 @@ export function mountIsland(element, onTick) {
     }
     return obstacle;
   };
-  const nearbyObstacles=(x,z)=>[...(obstacleGrid.get(gridKey(x,z))||[]),...forestObstacles.filter(o=>Math.abs(o.x-x)<12&&Math.abs(o.z-z)<12)];
+  const nearbyObstacles=(x,z)=>[...(obstacleGrid.get(gridKey(x,z))||[]),...forestObstacles.filter(o=>Math.abs(o.x-x)<12&&Math.abs(o.z-z)<12),...regrowthObstacles.filter(o=>Math.abs(o.x-x)<12&&Math.abs(o.z-z)<12)];
   const clearForGeorge=(x,z)=>{
     for(const o of nearbyObstacles(x,z)){
       const r=o.radius+.48;
@@ -280,7 +280,7 @@ export function mountIsland(element, onTick) {
   };
   const count=1700,trunks=new THREE.InstancedMesh(trunkGeo,trunkMat,count),leaves=new THREE.InstancedMesh(leafGeo,leafMat,count),dummy=new THREE.Object3D();
   for(let i=0;i<count;i++){const angle=rand(i+20)*Math.PI*2,r=Math.sqrt(rand(i+400))*620,x=Math.cos(angle)*r,z=Math.sin(angle)*r,y=height(x,z),scale=.7+rand(i+900)*1.1;
-    if(Math.hypot(x,z)<24){dummy.position.set(0,-1000,0);dummy.scale.set(0,0,0);dummy.updateMatrix();trunks.setMatrixAt(i,dummy.matrix);leaves.setMatrixAt(i,dummy.matrix);continue;}treeObstacles.push(registerObstacle(x,z,1.4*scale));dummy.position.set(x,y+5*scale,z);dummy.scale.set(scale,scale,scale);dummy.rotation.set(0,rand(i+1300)*6.28,0);dummy.updateMatrix();trunks.setMatrixAt(i,dummy.matrix);
+    if(Math.hypot(x,z)<24){dummy.position.set(0,-1000,0);dummy.scale.set(0,0,0);dummy.updateMatrix();trunks.setMatrixAt(i,dummy.matrix);leaves.setMatrixAt(i,dummy.matrix);continue;}treeObstacles[i]=registerObstacle(x,z,1.4*scale);dummy.position.set(x,y+5*scale,z);dummy.scale.set(scale,scale,scale);dummy.rotation.set(0,rand(i+1300)*6.28,0);dummy.updateMatrix();trunks.setMatrixAt(i,dummy.matrix);
     dummy.position.set(x,y+20*scale,z);dummy.updateMatrix();leaves.setMatrixAt(i,dummy.matrix);
   }
   trunks.instanceMatrix.needsUpdate=true;leaves.instanceMatrix.needsUpdate=true;scene.add(trunks,leaves);
@@ -440,7 +440,7 @@ export function mountIsland(element, onTick) {
   const regrowthRoot=new THREE.Group();scene.add(regrowthRoot);
   const seedlingTrunk=new THREE.CylinderGeometry(.16,.2,2,6),seedlingLeaf=new THREE.ConeGeometry(1.25,4,7);
   const seedlingBark=new THREE.MeshStandardMaterial({color:0x715038}),seedlingGreen=new THREE.MeshStandardMaterial({color:0x397f45});
-  const renderRegrowth=trees=>{regrowthRoot.clear();for(const tree of trees){const x=Number(tree.x),z=Number(tree.z),growth=Math.max(0,Math.min(1,Number(tree.growth)));if(!Number.isFinite(x)||!Number.isFinite(z)||height(x,z)<=0)continue;const group=new THREE.Group(),scale=.12+.88*growth;const trunk=new THREE.Mesh(seedlingTrunk,seedlingBark),crown=new THREE.Mesh(seedlingLeaf,seedlingGreen);trunk.position.y=1;crown.position.y=3.3;group.add(trunk,crown);group.scale.setScalar(scale);group.position.set(x,height(x,z),z);regrowthRoot.add(group);if(growth>.4)forestObstacles.push({x,z,radius:1.4*growth})}};
+  const renderRegrowth=trees=>{regrowthRoot.clear();regrowthObstacles.length=0;for(const tree of trees){const x=Number(tree.x),z=Number(tree.z),growth=Math.max(0,Math.min(1,Number(tree.growth)));if(!Number.isFinite(x)||!Number.isFinite(z)||height(x,z)<=0)continue;const group=new THREE.Group(),scale=.12+.88*growth;const trunk=new THREE.Mesh(seedlingTrunk,seedlingBark),crown=new THREE.Mesh(seedlingLeaf,seedlingGreen);trunk.position.y=1;crown.position.y=3.3;group.add(trunk,crown);group.scale.setScalar(scale);group.position.set(x,height(x,z),z);regrowthRoot.add(group);if(growth>.4)regrowthObstacles.push({x,z,radius:1.4*growth})}};
   const islandItemsRoot=new THREE.Group();scene.add(islandItemsRoot);
   const itemLoader=new GLTFLoader();
   const itemModels=new Map();
