@@ -34,3 +34,15 @@ footer{color:#647a80}
 /* Health and emotion meters use a single position marker rather than a percentage fill. */
 .dot-track{position:relative;overflow:visible;background:#e5ecee!important;height:6px;border-radius:999px}
 .dot-track .meter-dot{position:absolute;top:50%;width:12px;height:12px;transform:translate(-50%,-50%);border-radius:50%;background:#4eaa82;border:2px solid #fff;box-shadow:0 0 0 1px #4eaa82;pointer-events:none}
+
+/* Divine chat tab */
+.tabs{gap:14px;flex-wrap:wrap}.tabs button{white-space:nowrap}
+.divine-chat{padding-top:14px}.chat-intro{font-size:13px;line-height:1.6;color:#536970;margin:0 0 12px}
+.chat-scroll{max-height:370px;min-height:100px;overflow-y:auto;border:1px solid #e2e9eb;border-radius:9px;padding:12px;background:#fafcfc}
+.chat-entry{padding:10px 0;border-bottom:1px solid #e2e9eb}.chat-entry:last-child{border-bottom:0}.chat-meta{font-size:11px;color:#647a80}.chat-entry p{font-size:13px;line-height:1.5;margin:6px 0;color:#263e44;white-space:pre-wrap;overflow-wrap:anywhere}
+.chat-reply{background:#eaf6ee;border-left:3px solid #319669;border-radius:4px;padding:9px;margin-top:8px;font-size:12px;color:#286b4a}
+.chat-reply p{margin:5px 0 0}.chat-pending{font-size:11px;color:#788b91;font-style:italic}
+.chat-compose{display:flex;flex-direction:column;gap:9px;margin-top:13px}.chat-compose p,.chat-signed{font-size:12px;color:#536970;margin:0}.chat-signed button{background:none;border:0;color:#176b4a;text-decoration:underline;cursor:pointer}
+.chat-compose input,.chat-compose textarea{font:inherit;font-size:13px;padding:10px;border:1px solid #cbd9dc;border-radius:7px;background:#fff;color:#182b32;width:100%;box-sizing:border-box}
+.chat-compose button:not(.chat-signed button){background:#237a59;border:0;color:#fff;padding:10px;border-radius:7px;cursor:pointer;font-weight:600}.chat-compose button:disabled{opacity:.5;cursor:not-allowed}
+.chat-error{color:#a32222;font-size:12px}.chat-notice{color:#237a59;font-size:12px}
