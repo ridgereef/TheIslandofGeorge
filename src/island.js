@@ -481,7 +481,13 @@ export function mountIsland(element, onTick) {
     georgeAnimations=createGeorgeAnimationController(adventurer);
     // Root-motion position tracks can drive the entire character below terrain.
     // The shared world coordinates own translation; animation clips own limb motion.
-    const findClip=name=>gltf.animations.find(a=>a.name.toLowerCase()===name.toLowerCase());
+    const findClip=name=>{
+      const exact=gltf.animations.find(a=>a.name.toLowerCase()===name.toLowerCase());
+      if(exact)return exact;
+      const pattern=name==='Walk'?/(walk|walking|locomotion|run|jog)/i:/(idle|stand|breath)/i;
+      return gltf.animations.find(a=>pattern.test(a.name))||null;
+    };
+    console.info('George animation clips:',gltf.animations.map(a=>a.name));
     const withoutRootTranslation=clip=>{
       if(!clip)return null;
       const filtered=clip.clone();
@@ -493,6 +499,7 @@ export function mountIsland(element, onTick) {
       return filtered;
     };
     const walk=withoutRootTranslation(findClip('Walk')),idle=withoutRootTranslation(findClip('Idle'));
+    console.info('George selected walking clip:',walk?.name||'procedural fallback');
     if(walk)walkAction=adventurerMixer.clipAction(walk);
     if(idle)idleAction=adventurerMixer.clipAction(idle);
     activeAction=walkAction||idleAction;
@@ -637,7 +644,7 @@ export function mountIsland(element, onTick) {
     const desiredAction=moved&&!sitting?walkAction:idleAction;
     if(desiredAction&&desiredAction!==activeAction){activeAction?.fadeOut(.25);desiredAction.reset().fadeIn(.25).play();activeAction=desiredAction;}
     // Mixer updates first, then the procedural arm/leg/head offsets layer on top.
-    georgeAnimations?.update(dt,elapsed,moved&&!sitting?'idle':survivalPose);
+    georgeAnimations?.update(dt,elapsed,moved&&!sitting&&!walkAction?'walk':moved&&!sitting?'idle':survivalPose);
     if(adventurer){const baseline=adventurer.userData.groundOffset??0;adventurer.position.y=THREE.MathUtils.lerp(adventurer.position.y,baseline-(sitting?.55:0),Math.min(1,dt*8));}
     if(moved)george.rotation.y=nextHeading;
     const ground=height(george.position.x,george.position.z);
