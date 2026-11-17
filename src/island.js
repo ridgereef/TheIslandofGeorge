@@ -120,7 +120,7 @@ export function mountIsland(element, onTick) {
     const hills=30*Math.sin(x*.012)*Math.cos(z*.009)+22*Math.sin(x*.024+z*.013);
     const mountain=210*Math.exp(-((x+235)**2+(z-150)**2)/(2*160**2));
     const ridge=130*Math.exp(-((x-160)**2+(z+215)**2)/(2*200**2));
-    return r>coast+35?-5:Math.max(-5,4+inland*(24+hills+mountain+ridge));
+    return r>=coast ? -5-Math.min(4,(r-coast)*.18) : -5+9*Math.min(1,(coast-r)/18)+inland*(24+hills+mountain+ridge);
   };
   // Keep the viewing camera above terrain and outside hills when orbiting or zooming.
   const CAMERA_CLEARANCE=.25;
@@ -387,6 +387,19 @@ export function mountIsland(element, onTick) {
     if(r>maxR){const scale=maxR/r;return {x:x*scale,z:z*scale,limited:true}}
     return {x,z,limited:false};
   };
+  // The shared Supabase simulation owns George's activity and position.
+  // No local fatigue timer: every visitor observes the same George.
+  let sharedGeorge=null;
+  let sharedRefresh=null;
+  if(itemUrl&&itemKey){
+    const loadSharedGeorge=()=>fetch(itemUrl+'/rest/v1/world_state?select=position,inventory&id=eq.1',{
+      headers:{apikey:itemKey,Authorization:'Bearer '+itemKey}
+    }).then(r=>r.ok?r.json():Promise.reject(Error('World sync '+r.status)))
+      .then(rows=>{if(!disposed&&rows?.[0])sharedGeorge=rows[0]})
+      .catch(error=>console.warn('Shared George unavailable:',error));
+    loadSharedGeorge();
+    sharedRefresh=window.setInterval(loadSharedGeorge,5000);
+  }
   let frame,elapsed=0,last=0,disposed=false;const clock=new THREE.Clock();const resize=()=>{const w=element.clientWidth,h=Math.max(280,element.clientHeight);renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix()};const observer=new ResizeObserver(resize);observer.observe(element);resize();
   const animate=()=>{if(disposed)return;frame=requestAnimationFrame(animate);const dt=Math.min(clock.getDelta(),.1);elapsed+=dt;adventurerMixer?.update(dt);moveUnlockedCamera(dt);const cycle=getDayPhase(),angle=cycle*Math.PI*2;
     // Approximate daylight window 06:00–20:00 NZ local time, with smooth twilight.
@@ -399,44 +412,36 @@ export function mountIsland(element, onTick) {
     rainLines.position.y-= (elapsed*16)%4;
     hemi.intensity=(.4+daylight*1.7)*(1-weather.cloud*.32);
     sun.intensity=daylight*2.5*(1-weather.cloud*.7);
-    // Move continuously, steering around collision footprints instead of teleporting through them.
-    george.userData.seekWater=typeof window!=='undefined'&&window.__georgeNeedsWater===true;
-    const routeAngle=elapsed*.004;
-    const routeRadius=620+95*Math.sin(elapsed*.012);
-    const seekWater=george.userData.seekWater===true;
-    const resting=typeof window!=='undefined'&&window.__georgeNeedsRest===true;
-    const destination=resting?safePosition(1,1):seekWater?safePosition(-455,100):safePosition(Math.sin(routeAngle)*routeRadius,Math.cos(routeAngle)*routeRadius);
-    const dx=destination.x-george.position.x,dz=destination.z-george.position.z;
-    const desired=Math.atan2(dx,dz),speed=3.1*dt;
-    const currentHeading=george.userData.heading??desired;
-    let moved=false,nextHeading=currentHeading;
-    // Search progressively wider steering angles; every candidate is swept to prevent tunnelling.
-    const offsets=[0,.3,-.3,.6,-.6,1,-1,1.5,-1.5,2,-2,Math.PI];
-    const sweepClear=(heading)=>{
-      const stepX=Math.sin(heading)*speed,stepZ=Math.cos(heading)*speed;
-      const segments=Math.max(1,Math.ceil(speed/.25));
-      for(let j=1;j<=segments;j++){
-        const p=safePosition(george.position.x+stepX*j/segments,george.position.z+stepZ*j/segments);
-        if(p.limited||!clearForGeorge(p.x,p.z))return false;
-      }
-      return true;
-    };
-    if(Math.hypot(dx,dz)>.5){
-      for(const offset of offsets){
-        const heading=desired+offset;
-        if(!sweepClear(heading))continue;
-        george.position.x+=Math.sin(heading)*speed;
-        george.position.z+=Math.cos(heading)*speed;
-        nextHeading=heading;moved=true;break;
+    // George's actions come exclusively from the shared simulation. The browser is a viewer.
+    const sitting=sharedGeorge?.inventory?.activity==='sitting';
+    const resting=sharedGeorge?.inventory?.current_goal==='rest';
+    let moved=false,nextHeading=george.userData.heading??0;
+    if(sharedGeorge?.position){
+      const x=Number(sharedGeorge.position.x),z=Number(sharedGeorge.position.z);
+      if(Number.isFinite(x)&&Number.isFinite(z)){
+        const px=george.position.x,pz=george.position.z;
+        const delta=Math.hypot(x-px,z-pz);
+        // On first sync or after a large change, snap to the authoritative position.
+        if(!george.userData.hasSynced||delta>35){george.position.x=x;george.position.z=z;george.userData.hasSynced=true;}
+        else if(!sitting&&delta>.02){
+          const amount=Math.min(delta,2*Math.min(1,dt*2));
+          george.position.x+=((x-px)/delta)*amount;
+          george.position.z+=((z-pz)/delta)*amount;
+          moved=true;nextHeading=Math.atan2(x-px,z-pz);
+        }
       }
     }
+    george.userData.wasMoving=moved;
     george.userData.heading=nextHeading;
+    const desiredAction=moved?walkAction:idleAction;
+    if(desiredAction&&desiredAction!==activeAction){activeAction?.fadeOut(.25);desiredAction.reset().fadeIn(.25).play();activeAction=desiredAction;}
+    if(adventurer){adventurer.position.y=THREE.MathUtils.lerp(adventurer.position.y,(adventurer.userData.baseY??(adventurer.userData.baseY=adventurer.position.y))-(sitting?.55:0),Math.min(1,dt*3));}
     if(moved)george.rotation.y=nextHeading;
     const ground=height(george.position.x,george.position.z);
     const swimming=ground< -1;
-    george.position.y=(swimming?-2.3:ground)+Math.sin(elapsed*(swimming?3:7))*(swimming?.22:.035);
+    george.position.y=(swimming?-2.3:ground)+(moved?Math.sin(elapsed*(swimming?3:7))*(swimming?.22:.035):0);
     wetness=THREE.MathUtils.clamp(wetness+dt*((weather.rain||swimming)? .018 : -.008),0,1);
     const feelsLike=(weather.feelsLike??(temperature+daylight*(1-weather.cloud)*3))-(wetness*5);
-    const thermal=feelsLike<12?'Cold':feelsLike>28?'Hot':'Comfortable';if(followGeorge){followTarget.copy(george.position).add(new THREE.Vector3(0,1.7,0));const delta=followTarget.sub(controls.target).multiplyScalar(1-Math.exp(-dt*3.5));controls.target.add(delta);camera.position.add(delta)}controls.update();constrainCamera();controls.update();renderer.render(scene,camera);if(elapsed-last>2){last=elapsed;onTick?.({daylight,phase:cycle,georgeX:george.position.x,georgeZ:george.position.z,weather:weatherLabel,temperature:Math.round(temperature),thermal,swimming,wetness:Math.round(wetness*100),weatherSource:weather.source||'Simulated fallback',wind:Math.round(weather.wind||0),freshwaterNearby:freshwaterAt(george.position.x,george.position.z),georgeMoving:moved,atCamp:Math.hypot(george.position.x,george.position.z)<9,resting:resting&&Math.hypot(george.position.x,george.position.z)<9})}};
-  animate();return ()=>{disposed=true;itemsDisposed=true;if(itemRefresh!==null)clearInterval(itemRefresh);cancelAnimationFrame(frame);observer.disconnect();renderer.domElement.removeEventListener('pointerdown',onDown);window.removeEventListener('pointerup',onUp);window.removeEventListener('keydown',onKeyDown);window.removeEventListener('keyup',onKeyUp);window.removeEventListener('blur',onBlur);actions.remove();controls.dispose();renderer.dispose();renderer.domElement.remove();scene.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material){const mats=Array.isArray(o.material)?o.material:[o.material];mats.forEach(m=>m.dispose())}})};
+    const thermal=feelsLike<12?'Cold':feelsLike>28?'Hot':'Comfortable';if(followGeorge){followTarget.copy(george.position).add(new THREE.Vector3(0,1.7,0));const delta=followTarget.sub(controls.target).multiplyScalar(1-Math.exp(-dt*3.5));controls.target.add(delta);camera.position.add(delta)}controls.update();constrainCamera();controls.update();renderer.render(scene,camera);if(elapsed-last>2){last=elapsed;onTick?.({daylight,phase:cycle,georgeX:george.position.x,georgeZ:george.position.z,weather:weatherLabel,temperature:Math.round(temperature),thermal,swimming,wetness:Math.round(wetness*100),weatherSource:weather.source||'Simulated fallback',wind:Math.round(weather.wind||0),freshwaterNearby:freshwaterAt(george.position.x,george.position.z),georgeMoving:moved,sitting,atCamp:Math.hypot(george.position.x,george.position.z)<9,resting:resting&&Math.hypot(george.position.x,george.position.z)<9})}};
+  animate();return ()=>{disposed=true;itemsDisposed=true;if(itemRefresh!==null)clearInterval(itemRefresh);if(sharedRefresh!==null)clearInterval(sharedRefresh);cancelAnimationFrame(frame);observer.disconnect();renderer.domElement.removeEventListener('pointerdown',onDown);window.removeEventListener('pointerup',onUp);window.removeEventListener('keydown',onKeyDown);window.removeEventListener('keyup',onKeyUp);window.removeEventListener('blur',onBlur);actions.remove();controls.dispose();renderer.dispose();renderer.domElement.remove();scene.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material){const mats=Array.isArray(o.material)?o.material:[o.material];mats.forEach(m=>m.dispose())}})};
 }
