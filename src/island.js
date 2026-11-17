@@ -246,7 +246,7 @@ export function mountIsland(element, onTick) {
     });
     const matrix=new THREE.Object3D();
     placements.forEach((p,i)=>{
-      if(Math.hypot(p.x,p.z)<24)return;
+      if(Math.hypot(p.x,p.z)<24||cutLocations.some(c=>(c.x-p.x)**2+(c.z-p.z)**2<120))return;
       const v=variants[Math.floor(rand(i+7400)*variants.length)];
       matrix.position.set(p.x,height(p.x,p.z),p.z);
       matrix.rotation.set(0,p.rotation,0);matrix.scale.setScalar(p.scale);
@@ -296,6 +296,41 @@ export function mountIsland(element, onTick) {
     ['saw','handsaw_wood_1k.glb',28,-15],['searchlight','portable_searchlight_1k.glb',453,39],
     ['spray_paint','spray_paint_bottles_1k.glb',490,70]
   ];
+  // Persistent timber logs are ordinary shared island_items, not decorative counters.
+  const logGeo=new THREE.CylinderGeometry(.36,.39,2.5,9);
+  logGeo.rotateZ(Math.PI/2);
+  const logBark=new THREE.MeshStandardMaterial({color:0x735039,roughness:1});
+  const stumpGeo=new THREE.CylinderGeometry(.65,.8,.7,12);
+  const stumpMat=new THREE.MeshStandardMaterial({color:0x805a3a,roughness:1});
+  const stumpRoot=new THREE.Group();scene.add(stumpRoot);
+  const cutLocations=[];
+  const markCutTrees=events=>{
+    stumpRoot.clear();cutLocations.length=0;
+    for(const event of events){
+      const p=event.details?.position;
+      if(!p)continue;
+      const x=Number(p.x),z=Number(p.z);
+      if(!Number.isFinite(x)||!Number.isFinite(z))continue;
+      cutLocations.push({x,z});
+      const stump=new THREE.Mesh(stumpGeo,stumpMat);
+      stump.position.set(x,height(x,z)+.35,z);
+      stump.castShadow=true;stump.receiveShadow=true;stumpRoot.add(stump);
+    }
+    // Hide the closest procedural tree to each recorded cut.
+    const hidden=new Set();
+    for(const cut of cutLocations){
+      let best=-1,distance=25*25;
+      for(let i=0;i<count;i++){
+        const angle=rand(i+20)*Math.PI*2,r=Math.sqrt(rand(i+400))*620;
+        const x=Math.cos(angle)*r,z=Math.sin(angle)*r,d=(x-cut.x)**2+(z-cut.z)**2;
+        if(d<distance&&!hidden.has(i)){best=i;distance=d}
+      }
+      if(best>=0)hidden.add(best);
+    }
+    const transform=new THREE.Matrix4().makeScale(0,0,0);
+    for(const i of hidden){trunks.setMatrixAt(i,transform);leaves.setMatrixAt(i,transform)}
+    trunks.instanceMatrix.needsUpdate=true;leaves.instanceMatrix.needsUpdate=true;
+  };
   const islandItemsRoot=new THREE.Group();scene.add(islandItemsRoot);
   const itemLoader=new GLTFLoader();
   const itemModels=new Map();
@@ -305,10 +340,18 @@ export function mountIsland(element, onTick) {
     if(itemsDisposed)return;
     islandItemsRoot.clear();
     for(const item of instances){
+      const p=item.position||{};
+      const x=Number(p.x)||0,z=Number(p.z)||0;
+      if(item.type_id==='log'){
+        const log=new THREE.Mesh(logGeo,logBark);
+        log.position.set(x,height(x,z)+.38,z);
+        log.rotation.y=(x+z)%Math.PI;
+        log.castShadow=true;log.receiveShadow=true;islandItemsRoot.add(log);
+        continue;
+      }
       const template=itemModels.get(item.type_id);
       if(!template)continue;
-      const model=template.clone(true),p=item.position||{};
-      const x=Number(p.x)||0,z=Number(p.z)||0;
+      const model=template.clone(true);
       model.position.set(x,height(x,z)+.12,z);
       islandItemsRoot.add(model);
     }
@@ -338,6 +381,13 @@ export function mountIsland(element, onTick) {
     }).then(r=>{if(!r.ok)throw Error('Item query '+r.status);return r.json()})
       .then(items=>{if(!itemsDisposed&&Array.isArray(items)){currentItems=items;renderIslandItems(currentItems)}})
       .catch(error=>console.warn('Island item refresh unavailable:',error));
+    const refreshCutTrees=()=>fetch(itemUrl+'/rest/v1/island_item_events?select=id,details&event_type=eq.tree_cut&order=id.asc&limit=500',{
+      headers:{apikey:itemKey,Authorization:'Bearer '+itemKey}
+    }).then(r=>{if(!r.ok)throw Error('Cut-tree query '+r.status);return r.json()})
+      .then(events=>{if(!itemsDisposed&&Array.isArray(events))markCutTrees(events)})
+      .catch(error=>console.warn('Cut-tree locations unavailable:',error));
+    refreshCutTrees();
+    window.setInterval(refreshCutTrees,30000);
     refreshIslandItems();
     itemRefresh=window.setInterval(refreshIslandItems,15000);
   }
