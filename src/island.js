@@ -105,14 +105,35 @@ export function mountIsland(element, onTick) {
   // Instancing keeps thousands of trees efficient to render on mobile devices.
   const trunkGeo=new THREE.CylinderGeometry(.9,1.4,10,5),leafGeo=new THREE.ConeGeometry(6,24,6);
   const trunkMat=new THREE.MeshStandardMaterial({color:'#674b32'}),leafMat=new THREE.MeshStandardMaterial({color:'#326b3c'});
+  // Shared collision footprints for the visible instanced trees and rocks.
+  const obstacles=[],obstacleGrid=new Map(),CELL=20;
+  const gridKey=(x,z)=>Math.floor(x/CELL)+','+Math.floor(z/CELL);
+  const registerObstacle=(x,z,radius)=>{
+    const obstacle={x,z,radius};obstacles.push(obstacle);
+    const reach=Math.ceil(radius/CELL);
+    const gx=Math.floor(x/CELL),gz=Math.floor(z/CELL);
+    for(let dx=-reach;dx<=reach;dx++)for(let dz=-reach;dz<=reach;dz++){
+      const key=(gx+dx)+','+(gz+dz);
+      if(!obstacleGrid.has(key))obstacleGrid.set(key,[]);
+      obstacleGrid.get(key).push(obstacle);
+    }
+  };
+  const nearbyObstacles=(x,z)=>obstacleGrid.get(gridKey(x,z))||[];
+  const clearForGeorge=(x,z)=>{
+    for(const o of nearbyObstacles(x,z)){
+      const r=o.radius+.48;
+      if((x-o.x)**2+(z-o.z)**2<r*r)return false;
+    }
+    return true;
+  };
   const count=1700,trunks=new THREE.InstancedMesh(trunkGeo,trunkMat,count),leaves=new THREE.InstancedMesh(leafGeo,leafMat,count),dummy=new THREE.Object3D();
   for(let i=0;i<count;i++){const angle=rand(i+20)*Math.PI*2,r=Math.sqrt(rand(i+400))*620,x=Math.cos(angle)*r,z=Math.sin(angle)*r,y=height(x,z),scale=.7+rand(i+900)*1.1;
-    dummy.position.set(x,y+5*scale,z);dummy.scale.set(scale,scale,scale);dummy.rotation.set(0,rand(i+1300)*6.28,0);dummy.updateMatrix();trunks.setMatrixAt(i,dummy.matrix);
+    registerObstacle(x,z,1.4*scale);dummy.position.set(x,y+5*scale,z);dummy.scale.set(scale,scale,scale);dummy.rotation.set(0,rand(i+1300)*6.28,0);dummy.updateMatrix();trunks.setMatrixAt(i,dummy.matrix);
     dummy.position.set(x,y+20*scale,z);dummy.updateMatrix();leaves.setMatrixAt(i,dummy.matrix);
   }
   trunks.instanceMatrix.needsUpdate=true;leaves.instanceMatrix.needsUpdate=true;scene.add(trunks,leaves);
   const rockGeo=new THREE.DodecahedronGeometry(1),rockMat=new THREE.MeshStandardMaterial({color:'#8a948b'}),rocks=new THREE.InstancedMesh(rockGeo,rockMat,350);
-  for(let i=0;i<350;i++){const a=rand(i+2200)*6.28,r=Math.sqrt(rand(i+2600))*700,x=Math.cos(a)*r,z=Math.sin(a)*r,s=1+rand(i+3100)*4;dummy.position.set(x,height(x,z)+s*.2,z);dummy.scale.set(s,s*.65,s);dummy.rotation.set(0,rand(i+3200)*6.28,0);dummy.updateMatrix();rocks.setMatrixAt(i,dummy.matrix)}rocks.instanceMatrix.needsUpdate=true;scene.add(rocks);
+  for(let i=0;i<350;i++){const a=rand(i+2200)*6.28,r=Math.sqrt(rand(i+2600))*700,x=Math.cos(a)*r,z=Math.sin(a)*r,s=1+rand(i+3100)*4;registerObstacle(x,z,s*.95);dummy.position.set(x,height(x,z)+s*.2,z);dummy.scale.set(s,s*.65,s);dummy.rotation.set(0,rand(i+3200)*6.28,0);dummy.updateMatrix();rocks.setMatrixAt(i,dummy.matrix)}rocks.instanceMatrix.needsUpdate=true;scene.add(rocks);
   const groundY=height(0,0);
   const camp=mesh(new THREE.CylinderGeometry(2.2,2.7,.5,10),0x544c42,12,groundY+.25,10);
   const flame=mesh(new THREE.ConeGeometry(1.1,3,7),0xff8e38,12,groundY+2,10);
@@ -217,15 +238,39 @@ export function mountIsland(element, onTick) {
     rainLines.position.y-= (elapsed*16)%4;
     hemi.intensity=(.4+daylight*1.7)*(1-weather.cloud*.32);
     sun.intensity=daylight*2.5*(1-weather.cloud*.7);
-    const wander=elapsed*.19;
-    // Demo route includes an occasional coastal swim; movement always clamps to the 30 m offshore boundary.
+    // Move continuously, steering around collision footprints instead of teleporting through them.
+    const routeAngle=elapsed*.004;
     const routeRadius=620+95*Math.sin(elapsed*.012);
-    const proposed=safePosition(Math.sin(wander*.12)*routeRadius,Math.cos(wander*.12)*routeRadius);
-    george.position.x=proposed.x;george.position.z=proposed.z;
-    const ground=height(proposed.x,proposed.z);
+    const destination=safePosition(Math.sin(routeAngle)*routeRadius,Math.cos(routeAngle)*routeRadius);
+    const dx=destination.x-george.position.x,dz=destination.z-george.position.z;
+    const desired=Math.atan2(dx,dz),speed=3.1*dt;
+    const currentHeading=george.userData.heading??desired;
+    let moved=false,nextHeading=currentHeading;
+    // Search progressively wider steering angles; every candidate is swept to prevent tunnelling.
+    const offsets=[0,.3,-.3,.6,-.6,1,-1,1.5,-1.5,2,-2,Math.PI];
+    const sweepClear=(heading)=>{
+      const stepX=Math.sin(heading)*speed,stepZ=Math.cos(heading)*speed;
+      const segments=Math.max(1,Math.ceil(speed/.25));
+      for(let j=1;j<=segments;j++){
+        const p=safePosition(george.position.x+stepX*j/segments,george.position.z+stepZ*j/segments);
+        if(p.limited||!clearForGeorge(p.x,p.z))return false;
+      }
+      return true;
+    };
+    if(Math.hypot(dx,dz)>.5){
+      for(const offset of offsets){
+        const heading=desired+offset;
+        if(!sweepClear(heading))continue;
+        george.position.x+=Math.sin(heading)*speed;
+        george.position.z+=Math.cos(heading)*speed;
+        nextHeading=heading;moved=true;break;
+      }
+    }
+    george.userData.heading=nextHeading;
+    if(moved)george.rotation.y=nextHeading;
+    const ground=height(george.position.x,george.position.z);
     const swimming=ground< -1;
     george.position.y=(swimming?-2.3:ground)+Math.sin(elapsed*(swimming?3:7))*(swimming?.22:.035);
-    george.rotation.y=Math.atan2(Math.cos(wander*.12),-Math.sin(wander*.12));
     wetness=THREE.MathUtils.clamp(wetness+dt*((weather.rain||swimming)? .018 : -.008),0,1);
     const feelsLike=(weather.feelsLike??(temperature+daylight*(1-weather.cloud)*3))-(wetness*5);
     const thermal=feelsLike<12?'Cold':feelsLike>28?'Hot':'Comfortable';if(followGeorge){followTarget.copy(george.position).add(new THREE.Vector3(0,1.7,0));const delta=followTarget.sub(controls.target).multiplyScalar(1-Math.exp(-dt*3.5));controls.target.add(delta);camera.position.add(delta)}controls.update();constrainCamera();renderer.render(scene,camera);if(elapsed-last>2){last=elapsed;onTick?.({daylight,phase:cycle,georgeX:george.position.x,georgeZ:george.position.z,weather:weatherLabel,temperature:Math.round(temperature),thermal,swimming,wetness:Math.round(wetness*100),weatherSource:weather.source||'Simulated fallback',wind:Math.round(weather.wind||0)})}};
