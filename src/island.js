@@ -22,21 +22,27 @@ export function mountIsland(element, onTick) {
   renderer.domElement.style.cursor='grab';
   let followGeorge=true;
   const followTarget=new THREE.Vector3();
-  const setFollow=(enabled)=>{followGeorge=enabled;if(typeof followButton!=='undefined')followButton.setAttribute('aria-pressed',String(enabled))};
-  const onDown=(event)=>{renderer.domElement.style.cursor='grabbing';if(event.button===1||event.button===2)setFollow(false)};
-  const onWheel=()=>setFollow(false);
-  const onTouch=(event)=>{if(event.touches.length>1)setFollow(false)};
+  const setFollow=(enabled)=>{
+    followGeorge=enabled;
+    controls.enablePan=!enabled;
+    if(typeof followButton!=='undefined'){
+      followButton.textContent=enabled?'🔒':'🔓';
+      followButton.title=enabled?'Unlock camera to explore island':'Lock camera onto George';
+      followButton.setAttribute('aria-label',followButton.title);
+      followButton.setAttribute('aria-pressed',String(enabled));
+    }
+  };
+  const onDown=()=>{renderer.domElement.style.cursor='grabbing'};
   const onUp=()=>{renderer.domElement.style.cursor='grab'};
   renderer.domElement.addEventListener('pointerdown',onDown);
-  renderer.domElement.addEventListener('wheel',onWheel,{passive:true});
-  renderer.domElement.addEventListener('touchstart',onTouch,{passive:true});
   window.addEventListener('pointerup',onUp);
+  controls.enablePan=false;
   const actions=document.createElement('div');
   actions.className='camera-buttons';
   actions.setAttribute('aria-label','Island camera controls');
   const addButton=(label,title,fn)=>{
     const b=document.createElement('button');b.type='button';b.textContent=label;b.title=title;b.setAttribute('aria-label',title);
-    b.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();if(title==='Zoom in'||title==='Zoom out')setFollow(false);fn();controls.update();constrainCamera()});
+    b.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();fn();controls.update();constrainCamera()});
     actions.appendChild(b);
   };
   const orbit=(dx,dy=0)=>{
@@ -50,8 +56,21 @@ export function mountIsland(element, onTick) {
   addButton('+','Zoom in',()=>{camera.position.lerp(controls.target,.2)});
   addButton('−','Zoom out',()=>{const d=camera.position.clone().sub(controls.target);d.multiplyScalar(1.25).clampLength(controls.minDistance,controls.maxDistance);camera.position.copy(controls.target).add(d)});
   const followButton=document.createElement('button');
-  followButton.type='button';followButton.textContent='◎';followButton.title='Follow George';followButton.setAttribute('aria-label','Follow George');followButton.setAttribute('aria-pressed','true');
-  followButton.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();setFollow(!followGeorge);if(followGeorge){const target=george.position.clone().add(new THREE.Vector3(0,1.7,0));const shift=target.clone().sub(controls.target);camera.position.add(shift);controls.target.copy(target);controls.update()}});
+  followButton.type='button';
+  followButton.textContent='🔒';
+  followButton.title='Unlock camera to explore island';
+  followButton.setAttribute('aria-label',followButton.title);
+  followButton.setAttribute('aria-pressed','true');
+  followButton.addEventListener('click',e=>{
+    e.preventDefault();e.stopPropagation();
+    setFollow(!followGeorge);
+    if(followGeorge){
+      const target=george.position.clone().add(new THREE.Vector3(0,1.7,0));
+      const shift=target.clone().sub(controls.target);
+      camera.position.add(shift);controls.target.copy(target);
+      controls.update();constrainCamera();
+    }
+  });
   actions.appendChild(followButton);
   addButton('⌂','Reset camera and follow George',()=>{setFollow(true);const target=george.position.clone().add(new THREE.Vector3(0,1.7,0));controls.target.copy(target);camera.position.copy(target).add(new THREE.Vector3(0,0.32,1.49));camera.lookAt(controls.target)});
   element.appendChild(actions);
@@ -306,5 +325,5 @@ export function mountIsland(element, onTick) {
     wetness=THREE.MathUtils.clamp(wetness+dt*((weather.rain||swimming)? .018 : -.008),0,1);
     const feelsLike=(weather.feelsLike??(temperature+daylight*(1-weather.cloud)*3))-(wetness*5);
     const thermal=feelsLike<12?'Cold':feelsLike>28?'Hot':'Comfortable';if(followGeorge){followTarget.copy(george.position).add(new THREE.Vector3(0,1.7,0));const delta=followTarget.sub(controls.target).multiplyScalar(1-Math.exp(-dt*3.5));controls.target.add(delta);camera.position.add(delta)}controls.update();constrainCamera();renderer.render(scene,camera);if(elapsed-last>2){last=elapsed;onTick?.({daylight,phase:cycle,georgeX:george.position.x,georgeZ:george.position.z,weather:weatherLabel,temperature:Math.round(temperature),thermal,swimming,wetness:Math.round(wetness*100),weatherSource:weather.source||'Simulated fallback',wind:Math.round(weather.wind||0),freshwaterNearby:freshwaterAt(george.position.x,george.position.z),georgeMoving:moved})}};
-  animate();return ()=>{disposed=true;cancelAnimationFrame(frame);observer.disconnect();renderer.domElement.removeEventListener('pointerdown',onDown);renderer.domElement.removeEventListener('wheel',onWheel);renderer.domElement.removeEventListener('touchstart',onTouch);window.removeEventListener('pointerup',onUp);actions.remove();controls.dispose();renderer.dispose();renderer.domElement.remove();scene.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material){const mats=Array.isArray(o.material)?o.material:[o.material];mats.forEach(m=>m.dispose())}})};
+  animate();return ()=>{disposed=true;cancelAnimationFrame(frame);observer.disconnect();renderer.domElement.removeEventListener('pointerdown',onDown);window.removeEventListener('pointerup',onUp);actions.remove();controls.dispose();renderer.dispose();renderer.domElement.remove();scene.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material){const mats=Array.isArray(o.material)?o.material:[o.material];mats.forEach(m=>m.dispose())}})};
 }
