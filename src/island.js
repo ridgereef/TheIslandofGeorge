@@ -518,7 +518,7 @@ export function mountIsland(element, onTick) {
       mesh.castShadow=true;mesh.receiveShadow=true;mudRoot.add(mesh);
     }
   };
-  let mudRefresh=null;
+  let mudRefresh=null,clayFireRefresh=null;
   let itemRefresh=null,cutTreeRefresh=null,carriedLogRefresh=null,eventRefresh=null,georgeHasLog=false;
   if(itemUrl&&itemKey){
     const refreshMud=()=>fetch(itemUrl+'/rest/v1/island_mud_construction?select=id,status,x,z,level,site_x,site_z,structure_status&limit=500',{headers:{apikey:itemKey,Authorization:'Bearer '+itemKey}})
@@ -529,7 +529,7 @@ export function mountIsland(element, onTick) {
     const refreshClayFires=()=>fetch(itemUrl+'/rest/v1/island_clay_fires?select=id,x,z,lit,fuel_logs',{headers:{apikey:itemKey,Authorization:'Bearer '+itemKey}})
       .then(r=>r.ok?r.json():[]).then(fires=>{if(!itemsDisposed)renderClayFires(fires)}).catch(error=>console.warn('Clay fire refresh unavailable:',error));
     refreshClayFires();
-    window.setInterval(refreshClayFires,15000);
+    clayFireRefresh=window.setInterval(refreshClayFires,15000);
 
     const refreshIslandItems=()=>fetch(itemUrl+'/rest/v1/island_items?select=id,type_id,position,state&state=in.(ground,placed)',{
       headers:{apikey:itemKey,Authorization:'Bearer '+itemKey}
