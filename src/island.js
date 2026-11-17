@@ -1,8 +1,22 @@
 import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 export function mountIsland(element, onTick) {
   const scene=new THREE.Scene(); scene.background=new THREE.Color('#87bed0'); scene.fog=new THREE.Fog('#87bed0',35,105);
   const camera=new THREE.PerspectiveCamera(58,1,.1,180); camera.position.set(20,19,27); camera.lookAt(0,1,0);
   const renderer=new THREE.WebGLRenderer({antialias:true,alpha:false}); renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2)); renderer.shadowMap.enabled=true; renderer.outputColorSpace=THREE.SRGBColorSpace; element.appendChild(renderer.domElement);
+  const controls=new OrbitControls(camera,renderer.domElement);
+  controls.target.set(0,1,0);
+  controls.enableDamping=true;
+  controls.dampingFactor=.075;
+  controls.enablePan=true;
+  controls.enableZoom=true;
+  controls.minDistance=5;
+  controls.maxDistance=90;
+  controls.minPolarAngle=.12;
+  controls.maxPolarAngle=Math.PI/2-.035;
+  controls.mouseButtons={LEFT:THREE.MOUSE.ROTATE,MIDDLE:THREE.MOUSE.DOLLY,RIGHT:THREE.MOUSE.PAN};
+  controls.touches={ONE:THREE.TOUCH.ROTATE,TWO:THREE.TOUCH.DOLLY_PAN};
+  controls.update();
   const hemi=new THREE.HemisphereLight(0xb8dfff,0x304f38,2.1);scene.add(hemi);
   const sun=new THREE.DirectionalLight(0xffe3b0,2.4);sun.position.set(-15,25,10);sun.castShadow=true;sun.shadow.mapSize.set(1024,1024);sun.shadow.camera.left=-30;sun.shadow.camera.right=30;sun.shadow.camera.top=30;sun.shadow.camera.bottom=-30;scene.add(sun);
   const mesh=(geo,color,x,y,z,cast=true)=>{const o=new THREE.Mesh(geo,new THREE.MeshStandardMaterial({color,roughness:.9}));o.position.set(x,y,z);o.castShadow=cast;o.receiveShadow=true;scene.add(o);return o;};
@@ -20,6 +34,6 @@ export function mountIsland(element, onTick) {
   part(new THREE.CapsuleGeometry(.36,.9,4,8),shirt,0,1.8,0);part(new THREE.SphereGeometry(.32,12,12),skin,0,2.75,0);part(new THREE.CapsuleGeometry(.13,.65,4,8),pants,-.22,.8,0);part(new THREE.CapsuleGeometry(.13,.65,4,8),pants,.22,.8,0);part(new THREE.CapsuleGeometry(.12,.55,4,8),skin,-.5,1.8,0);part(new THREE.CapsuleGeometry(.12,.55,4,8),skin,.5,1.8,0);
   george.position.set(0,1.65,0);scene.add(george);
   let frame,elapsed=0,last=0,disposed=false;const clock=new THREE.Clock();const resize=()=>{const w=element.clientWidth,h=Math.max(280,element.clientHeight);renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix()};const observer=new ResizeObserver(resize);observer.observe(element);resize();
-  const animate=()=>{if(disposed)return;frame=requestAnimationFrame(animate);const dt=Math.min(clock.getDelta(),.1);elapsed+=dt;const cycle=(elapsed/180)%1,angle=cycle*Math.PI*2;const daylight=Math.max(.07,Math.sin(angle)*.9+.13);hemi.intensity=.4+daylight*1.7;sun.intensity=daylight*2.5;sun.position.set(Math.cos(angle)*24,Math.sin(angle)*30,8);scene.background.set(daylight>.3?'#87bed0':'#0a172d');scene.fog.color.copy(scene.background);flame.scale.setScalar(.9+Math.sin(elapsed*9)*.1);const wander=elapsed*.19;george.position.set(Math.sin(wander)*4,1.65,Math.cos(wander*.7)*3);george.rotation.y=Math.atan2(Math.cos(wander)*4, -Math.sin(wander*.7)*2.1);george.position.y+=Math.sin(elapsed*7)*.035;camera.position.x=20+Math.sin(elapsed*.04)*2;camera.lookAt(0,1,0);renderer.render(scene,camera);if(elapsed-last>2){last=elapsed;onTick?.({daylight,phase:cycle,georgeX:george.position.x,georgeZ:george.position.z})}};
-  animate();return ()=>{disposed=true;cancelAnimationFrame(frame);observer.disconnect();renderer.dispose();renderer.domElement.remove();scene.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material){const mats=Array.isArray(o.material)?o.material:[o.material];mats.forEach(m=>m.dispose())}})};
+  const animate=()=>{if(disposed)return;frame=requestAnimationFrame(animate);const dt=Math.min(clock.getDelta(),.1);elapsed+=dt;const cycle=(elapsed/180)%1,angle=cycle*Math.PI*2;const daylight=Math.max(.07,Math.sin(angle)*.9+.13);hemi.intensity=.4+daylight*1.7;sun.intensity=daylight*2.5;sun.position.set(Math.cos(angle)*24,Math.sin(angle)*30,8);scene.background.set(daylight>.3?'#87bed0':'#0a172d');scene.fog.color.copy(scene.background);flame.scale.setScalar(.9+Math.sin(elapsed*9)*.1);const wander=elapsed*.19;george.position.set(Math.sin(wander)*4,1.65,Math.cos(wander*.7)*3);george.rotation.y=Math.atan2(Math.cos(wander)*4, -Math.sin(wander*.7)*2.1);george.position.y+=Math.sin(elapsed*7)*.035;controls.update();renderer.render(scene,camera);if(elapsed-last>2){last=elapsed;onTick?.({daylight,phase:cycle,georgeX:george.position.x,georgeZ:george.position.z})}};
+  animate();return ()=>{disposed=true;cancelAnimationFrame(frame);observer.disconnect();controls.dispose();renderer.dispose();renderer.domElement.remove();scene.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material){const mats=Array.isArray(o.material)?o.material:[o.material];mats.forEach(m=>m.dispose())}})};
 }
