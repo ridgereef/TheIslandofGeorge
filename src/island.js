@@ -127,6 +127,7 @@ export function mountIsland(element, onTick) {
   // Reset the orbit orientation explicitly, rather than retaining a previous top-down angle.
   const DEFAULT_CAMERA_DISTANCE=3.048;
   const DEFAULT_CAMERA_ELEVATION=.35;
+  let initialCameraSynced=false;
   const setDefaultGeorgeCamera=()=>{
     const target=george.position.clone().add(new THREE.Vector3(0,1.55,0));
     controls.target.copy(target);
@@ -672,7 +673,9 @@ export function mountIsland(element, onTick) {
         // Snap only on the initial sync. Subsequent server updates are destinations,
         // never teleports: walk towards them even when the server is far ahead.
         if(!george.userData.hasSynced){
-          george.position.x=x;george.position.z=z;george.userData.hasSynced=true;
+          george.position.x=x;george.position.z=z;george.position.y=height(x,z);
+          george.userData.hasSynced=true;
+          if(!initialCameraSynced){setDefaultGeorgeCamera();initialCameraSynced=true;}
         }else if(delta>.04){
           // Catch up smoothly, bounded by a believable travel speed.
           // Avoid per-frame fixed distance increments (which cause FPS-dependent movement).
@@ -688,7 +691,10 @@ export function mountIsland(element, onTick) {
     }
     george.userData.wasMoving=moved;
     george.userData.heading=nextHeading;
-    const recent=lastSurvivalEvent&&Date.now()-new Date(lastSurvivalEvent.created_at).getTime()<9000?lastSurvivalEvent.event_type:null;
+    const eventAge=lastSurvivalEvent?Date.now()-new Date(lastSurvivalEvent.created_at).getTime():Infinity;
+    const recent=eventAge>=0&&eventAge<9000?lastSurvivalEvent.event_type:null;
+    // Pause briefly at an item to visibly bend down and reach before continuing.
+    const pickingUp=(recent==='collected_item'||recent==='swapped_item')&&eventAge<2400;
     const goal=String(sharedGeorge?.inventory?.current_goal||'').toLowerCase();
     const lastAction=String(sharedGeorge?.inventory?.last_action||'').toLowerCase();
     const needs=sharedGeorge?.needs||{};
@@ -709,11 +715,11 @@ export function mountIsland(element, onTick) {
     else if(goal.includes('investigate'))survivalPose='look';
     else if(!moved)survivalPose='think';
     // Do not infer an eating/drinking animation merely from low needs: wait for an actual action.
-    const desiredAction=moved&&!sitting?walkAction:idleAction;
+    const desiredAction=moved&&!sitting&&!pickingUp?walkAction:idleAction;
     if(desiredAction&&desiredAction!==activeAction){activeAction?.fadeOut(.25);desiredAction.reset().fadeIn(.25).play();activeAction=desiredAction;}
     // Mixer updates first, then the procedural arm/leg/head offsets layer on top.
-    georgeAnimations?.update(dt,elapsed,moved&&!sitting&&!walkAction?'walk':moved&&!sitting?'idle':survivalPose);
-    if(adventurer){const baseline=adventurer.userData.groundOffset??0;adventurer.position.y=THREE.MathUtils.lerp(adventurer.position.y,baseline-(sitting?.55:0),Math.min(1,dt*8));}
+    georgeAnimations?.update(dt,elapsed,pickingUp?'pickup':moved&&!sitting&&!walkAction?'walk':moved&&!sitting?'idle':survivalPose);
+    if(adventurer){const baseline=adventurer.userData.groundOffset??0;adventurer.position.y=THREE.MathUtils.lerp(adventurer.position.y,baseline-(sitting?.55:0)-(pickingUp?.24:0),Math.min(1,dt*8));}
     if(moved)george.rotation.y=nextHeading;
     const ground=height(george.position.x,george.position.z);
     const swimming=ground< -1;
