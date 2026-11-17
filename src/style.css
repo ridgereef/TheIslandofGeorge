@@ -30,3 +30,7 @@ body,.shell{background:#fff;color:#182b32}
 footer{color:#647a80}
 .journal-scroll{scrollbar-color:#b5cfca #f0f5f4}
 .journal-scroll:focus-visible{outline-color:#319669}
+
+/* Health and emotion meters use a single position marker rather than a percentage fill. */
+.dot-track{position:relative;overflow:visible;background:#e5ecee!important;height:6px;border-radius:999px}
+.dot-track .meter-dot{position:absolute;top:50%;width:12px;height:12px;transform:translate(-50%,-50%);border-radius:50%;background:#4eaa82;border:2px solid #fff;box-shadow:0 0 0 1px #4eaa82;pointer-events:none}
