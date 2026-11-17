@@ -105,7 +105,7 @@ export function mountIsland(element, onTick) {
     }
   });
   actions.appendChild(followButton);
-  addButton('⌂','Reset camera and follow George',()=>{setFollow(true);const target=george.position.clone().add(new THREE.Vector3(0,1.7,0));controls.target.copy(target);camera.position.copy(target).add(new THREE.Vector3(0,0.32,1.49));camera.lookAt(controls.target)});
+  addButton('⌂','Reset camera and follow George',()=>{setFollow(true);const target=george.position.clone().add(new THREE.Vector3(0,1.7,0));controls.target.copy(target);camera.position.copy(target).add(new THREE.Vector3(8.5,3.2,10.5));camera.lookAt(controls.target);constrainCamera()});
   addButton('⚒','Rearrange George’s camp',()=>arrangeCamp());
   element.appendChild(actions);
   const hemi=new THREE.HemisphereLight(0xb8dfff,0x304f38,2.1);scene.add(hemi);
@@ -467,7 +467,7 @@ export function mountIsland(element, onTick) {
   },undefined,error=>{console.warn('Adventurer model not available; showing temporary character.',error)});
 
   controls.target.set(0,groundY+1.7,0);
-  camera.position.copy(controls.target).add(new THREE.Vector3(15,9,22));
+  camera.position.copy(controls.target).add(new THREE.Vector3(8.5,3.2,10.5));
   controls.update();
   // Wall-clock driven lighting: reloads and visitors share the same NZ local time.
   // Pacific/Auckland observes NZST (UTC+12) and NZDT (UTC+13) automatically.
