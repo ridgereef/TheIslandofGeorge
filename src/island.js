@@ -120,7 +120,7 @@ export function mountIsland(element, onTick) {
     const hills=30*Math.sin(x*.012)*Math.cos(z*.009)+22*Math.sin(x*.024+z*.013);
     const mountain=210*Math.exp(-((x+235)**2+(z-150)**2)/(2*160**2));
     const ridge=130*Math.exp(-((x-160)**2+(z+215)**2)/(2*200**2));
-    return r>coast+35?-5:Math.max(-5,4+inland*(24+hills+mountain+ridge));
+    return r>=coast ? -5-Math.min(4,(r-coast)*.18) : -5+9*Math.min(1,(coast-r)/18)+inland*(24+hills+mountain+ridge);
   };
   // Keep the viewing camera above terrain and outside hills when orbiting or zooming.
   const CAMERA_CLEARANCE=.25;
