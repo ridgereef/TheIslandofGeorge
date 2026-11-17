@@ -10,7 +10,7 @@ export function createGeorgeAnimationController(root) {
   const rotation = new THREE.Quaternion();
   let weight = 0;
   let current = 'idle';
-  const clipActions = new Set(['sit','saw','pickup','putdown','carry','build','drink','eat','sleep','look']);
+  const clipActions = new Set(['sit','saw','pickup','putdown','carry','build','drink','eat','sleep','look','think']);
   function offset(name, x=0, y=0, z=0, amount=weight) {
     const bone = bones.get(name);
     if (!bone || amount <= 0) return;
@@ -34,7 +34,8 @@ export function createGeorgeAnimationController(root) {
           offset('Hips',-.16,0,0);
           offset('UpperLeg.L',-1.2,0,.10);offset('UpperLeg.R',-1.2,0,-.10);
           offset('LowerLeg.L',1.3);offset('LowerLeg.R',1.3);
-          offset('UpperArm.L',.3,0,-.25);offset('UpperArm.R',.3,0,.25);
+          offset('UpperArm.L',.3+.06*Math.sin(t*.8),0,-.25);offset('UpperArm.R',.3+.06*Math.sin(t*.7),0,.25);
+          offset('Head',.05*Math.sin(t*.65),.13*Math.sin(t*.45));
           break;
         case 'saw':
           offset('Spine',.2,0,.12);
@@ -76,6 +77,16 @@ export function createGeorgeAnimationController(root) {
           offset('Hips',-.1);offset('Spine',-.18);
           offset('UpperArm.L',.2,0,-.55);offset('UpperArm.R',.2,0,.55);
           offset('UpperLeg.L',-.15);offset('UpperLeg.R',-.15);
+          break;
+        case 'think':
+          // Asymmetric, continuously changing gestures rather than a frozen idle pose.
+          offset('Spine',.035*Math.sin(t*.8),.055*Math.sin(t*.37));
+          offset('UpperArm.L',-.35-.20*Math.sin(t*1.1),0,-.18-.15*Math.sin(t*.7));
+          offset('LowerArm.L',-.45-.3*Math.sin(t*.9));
+          offset('UpperArm.R',-.18-.35*Math.sin(t*.65+1),0,.20+.18*Math.sin(t*.9));
+          offset('LowerArm.R',-.65-.3*Math.sin(t*.55+2));
+          offset('Neck',.04*Math.sin(t*.6),.18*Math.sin(t*.43));
+          offset('Head',.08*Math.sin(t*.75),.22*Math.sin(t*.45));
           break;
         case 'look':
           offset('Neck',0,.35*slow);
