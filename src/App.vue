@@ -2,7 +2,7 @@
 import {ref,onMounted,onUnmounted,computed} from 'vue';
 import {createClient} from '@supabase/supabase-js';
 import {mountIsland} from './island.js';
-const canvas=ref(null),phase=ref(.25),daylight=ref(1),weather=ref('Sunny'),temperature=ref(20),thermal=ref('Comfortable'),swimming=ref(false),wetness=ref(0),weatherSource=ref('Simulated fallback'),wind=ref(0),previewNeeds=ref({health:100,hunger:100,thirst:100,morale:100}),journal=ref([]),world=ref(null),connected=ref(false),loading=ref(true),tab=ref('journal');
+const canvas=ref(null),phase=ref(.25),daylight=ref(1),weather=ref('Sunny'),temperature=ref(20),thermal=ref('Comfortable'),swimming=ref(false),wetness=ref(0),weatherSource=ref('Simulated fallback'),wind=ref(0),previewNeeds=ref({health:100,hunger:100,thirst:100,morale:100,energy:100}),journal=ref([]),world=ref(null),connected=ref(false),loading=ref(true),tab=ref('journal');
 let dispose,refresh;let lastSurvivalUpdate=Date.now();
 const supabaseUrl=import.meta.env.VITE_SUPABASE_URL;
 const supabaseKey=import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
@@ -10,13 +10,13 @@ const client=supabaseUrl&&supabaseKey?createClient(supabaseUrl,supabaseKey):null
 const timeLabel=computed(()=>{const h=phase.value*24;return h<5.5?'Night':h<7?'Dawn':h<11?'Morning':h<14?'Midday':h<18?'Afternoon':h<20.5?'Dusk':'Night'});
 const clockLabel=computed(()=>{const total=Math.floor(phase.value*1440);return String(Math.floor(total/60)).padStart(2,'0')+':'+String(total%60).padStart(2,'0')});
 const mood=computed(()=>world.value?.emotions?'Curious':'Curious');
-const needs=computed(()=>{const n=previewNeeds.value;return [['Health',n.health??100],['Hunger',n.hunger??100],['Thirst',n.thirst??100],['Morale',n.morale??100]]});
+const needs=computed(()=>{const n=previewNeeds.value;return [['Health',n.health??100],['Hunger',n.hunger??100],['Thirst',n.thirst??100],['Morale',n.morale??100],['Energy',n.energy??100]]});
 // Survival percentages represent reserves, not an immediate death timer.
 // 100 -> 0 thirst in ~48 hours without water at rest; heat/activity accelerate loss.
 const SURVIVAL_KEY='george-survival-preview-v2';
 let lastDrink=0;
 try{const saved=JSON.parse(localStorage.getItem(SURVIVAL_KEY)||'null');if(saved?.needs&&Number.isFinite(saved.at)){previewNeeds.value=saved.needs;lastSurvivalUpdate=Math.max(saved.at,Date.now()-48*3600000)}}catch{}
-function advanceSurvival({thermal,swimming,wetness,freshwaterNearby,georgeMoving}){
+function advanceSurvival({thermal,swimming,wetness,freshwaterNearby,georgeMoving,resting}){
  const now=Date.now(),minutes=Math.max(0,Math.min((now-lastSurvivalUpdate)/60000,48*60));lastSurvivalUpdate=now;
  const n=previewNeeds.value,hot=thermal==='Hot',cold=thermal==='Cold';
  const thirst=Math.max(0,n.thirst-minutes*(100/(48*60))*(1+(hot?.45:0)+(swimming?.3:0)+(georgeMoving?.15:0)));
@@ -24,16 +24,18 @@ function advanceSurvival({thermal,swimming,wetness,freshwaterNearby,georgeMoving
  const exposure=cold&&wetness>40?.015:0;
  const damage=minutes*((thirst<15?.045:0)+(hunger<10?.012:0)+exposure);
  const morale=Math.max(0,n.morale-minutes*(.004+(thirst<25?.01:0)));
+ const energy=Math.max(0,Math.min(100,(n.energy??100)+minutes*(resting?1.25:-(georgeMoving?.085:.025))));
  const canDrink=freshwaterNearby&&!swimming&&now-lastDrink>120000&&thirst<85;
  const replenished=canDrink?100:thirst;
  if(canDrink)lastDrink=now;
- previewNeeds.value={health:Math.max(0,n.health-damage),hunger,thirst:replenished,morale};
+ previewNeeds.value={health:Math.max(0,n.health-damage),hunger,thirst:replenished,morale,energy};
  // Seek only fresh river water. Sea swimming never replenishes thirst.
- window.__georgeNeedsWater=replenished<65;
+ window.__georgeNeedsRest=energy<25||(resting&&energy<92);
+ window.__georgeNeedsWater=replenished<65&&!window.__georgeNeedsRest;
  try{localStorage.setItem(SURVIVAL_KEY,JSON.stringify({at:now,needs:previewNeeds.value}))}catch{}
 }
 async function loadData(){if(!client){loading.value=false;return}try{const [w,j]=await Promise.all([client.from('world_state').select('day,status,needs,emotions,stimulation,boredom,novelty_drive,clock_discovered').eq('id',1).maybeSingle(),client.from('george_journal').select('id,island_day,perceived_time,title,entry,created_at').order('island_day',{ascending:false}).order('island_minute',{ascending:false}).limit(20)]);if(w.error||j.error)throw w.error||j.error;world.value=w.data;journal.value=j.data||[];connected.value=true}catch(e){connected.value=false;console.warn('Read-only Supabase data unavailable',e)}finally{loading.value=false}}
-onMounted(()=>{dispose=mountIsland(canvas.value,({phase:p,daylight:d,weather:w,temperature:t,thermal:th,swimming:s,wetness:wet,weatherSource:source,wind:windSpeed,freshwaterNearby,georgeMoving})=>{phase.value=p;daylight.value=d;weather.value=w;temperature.value=t;thermal.value=th;swimming.value=s;wetness.value=wet;weatherSource.value=source;wind.value=windSpeed;advanceSurvival({thermal:th,swimming:s,wetness:wet,freshwaterNearby,georgeMoving})});loadData();refresh=setInterval(loadData,60000)});
+onMounted(()=>{dispose=mountIsland(canvas.value,({phase:p,daylight:d,weather:w,temperature:t,thermal:th,swimming:s,wetness:wet,weatherSource:source,wind:windSpeed,freshwaterNearby,georgeMoving,resting})=>{phase.value=p;daylight.value=d;weather.value=w;temperature.value=t;thermal.value=th;swimming.value=s;wetness.value=wet;weatherSource.value=source;wind.value=windSpeed;advanceSurvival({thermal:th,swimming:s,wetness:wet,freshwaterNearby,georgeMoving,resting})});loadData();refresh=setInterval(loadData,60000)});
 onUnmounted(()=>{dispose?.();clearInterval(refresh)});
 </script>
 <template>
@@ -41,7 +43,7 @@ onUnmounted(()=>{dispose?.();clearInterval(refresh)});
 <header class="topbar"><div class="brand"><div class="mark">G</div><div><span class="eyebrow">A LIVING ISLAND EXPERIMENT</span><h1>The Island of George</h1></div></div><div class="status"><span class="live-dot"></span> {{connected?'World data connected':'3D prototype'}} <span class="separator">·</span> Day {{world?.day||1}}</div></header>
 <main class="layout">
 <section class="scene-panel"><div class="scene" ref="canvas"></div><div class="scene-overlay"><div class="pill">☀ {{timeLabel}} <span>·</span> {{Math.round(daylight*100)}}% daylight · {{clockLabel}} NZ</div><div class="scene-hint">Drag to orbit · Scroll to zoom · Right-drag to pan</div></div><div class="scene-footer"><div><span class="eyebrow">GEORGE'S CURRENT WORLD</span><h2>Somewhere on a forgotten island</h2><p>Five biomes to explore. A lifetime of choices ahead.</p></div><span class="tag">PROTOTYPE</span></div></section>
-<aside class="sidebar"><section class="panel"><div class="section-title"><span class="eyebrow">SURVIVAL STATUS · LIVE PREVIEW</span><span class="tag">{{world?.status||'Preview'}}</span></div><h2>Meet George</h2><p class="muted">An explorer with no map, no clock, and an entire island to discover.</p><p class="muted">Survival preview: thirst declines over roughly two days without freshwater; George seeks the mountain stream. Values are stored in this browser, not yet on the server.</p><div class="meters"><div v-for="[name,value] in needs" :key="name" class="meter"><div class="meter-label"><span>{{name}}</span><strong>{{Math.round(value)}}%</strong></div><div class="track"><div class="fill" :style="{width:value+'%'}"></div></div></div></div><div class="mood">✦ Mood: {{mood}} <span>·</span> Never sleeps</div><div class="mood">☁ {{weather}} · {{temperature}}°C · {{thermal}} <span>·</span> {{swimming?'Swimming':'On land'}} · Wet {{wetness}}%</div><div class="mood">Wind {{wind}} km/h · {{weatherSource}}</div></section>
+<aside class="sidebar"><section class="panel"><div class="section-title"><span class="eyebrow">SURVIVAL STATUS · LIVE PREVIEW</span><span class="tag">{{world?.status||'Preview'}}</span></div><h2>Meet George</h2><p class="muted">An explorer with no map, no clock, and an entire island to discover.</p><p class="muted">Survival preview: thirst declines over roughly two days without freshwater; George seeks the mountain stream and returns to camp to rest when tired. Values are stored in this browser, not yet on the server.</p><div class="meters"><div v-for="[name,value] in needs" :key="name" class="meter"><div class="meter-label"><span>{{name}}</span><strong>{{Math.round(value)}}%</strong></div><div class="track"><div class="fill" :style="{width:value+'%'}"></div></div></div></div><div class="mood">✦ Mood: {{mood}} <span>·</span> Never sleeps</div><div class="mood">☁ {{weather}} · {{temperature}}°C · {{thermal}} <span>·</span> {{swimming?'Swimming':'On land'}} · Wet {{wetness}}%</div><div class="mood">Wind {{wind}} km/h · {{weatherSource}}</div></section>
 <section class="panel journal"><div class="tabs"><button :class="{active:tab==='journal'}" @click="tab='journal'">Public journal</button><button :class="{active:tab==='about'}" @click="tab='about'">About the world</button></div><template v-if="tab==='journal'"><div v-if="loading" class="empty">Checking George's journal…</div><div v-else-if="journal.length===0" class="empty"><div class="book">✎</div><h3>His story hasn't begun yet.</h3><p>When the autonomous AI engine starts writing, George's notes will appear here for everyone to read.</p></div><article v-for="item in journal" :key="item.id" class="entry"><div class="eyebrow">DAY {{item.island_day}} · {{item.perceived_time}}</div><h3>{{item.title}}</h3><p>{{item.entry}}</p></article></template><div v-else class="about"><p>George will eventually make independent decisions, remember discoveries, react to visitors and document his life here.</p><p>Day and night in this preview follow New Zealand local time. The current 3D character follows a demo route rather than AI decisions.</p><p>All real simulation actions will be validated on the server.</p></div></section></aside>
 </main><footer>THE ISLAND OF GEORGE <span>·</span> A survival simulation in development <span>·</span> {{connected?'Read-only Supabase connection active':'Live database not configured in deployment'}}</footer>
 </div>
