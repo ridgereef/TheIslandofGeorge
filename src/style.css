@@ -46,3 +46,13 @@ footer{color:#647a80}
 .chat-compose input,.chat-compose textarea{font:inherit;font-size:13px;padding:10px;border:1px solid #cbd9dc;border-radius:7px;background:#fff;color:#182b32;width:100%;box-sizing:border-box}
 .chat-compose button:not(.chat-signed button){background:#237a59;border:0;color:#fff;padding:10px;border-radius:7px;cursor:pointer;font-weight:600}.chat-compose button:disabled{opacity:.5;cursor:not-allowed}
 .chat-error{color:#a32222;font-size:12px}.chat-notice{color:#237a59;font-size:12px}
+
+/* George's discovered mental map */
+.memory-panel{padding-top:14px}.memory-filter{display:flex;align-items:center;justify-content:space-between;font-size:12px;color:#536970;margin-bottom:10px}
+.memory-filter select{padding:6px;border:1px solid #cbd9dc;border-radius:6px;background:#fff;color:#263e44}
+.memory-map{position:relative;width:100%;aspect-ratio:1;overflow:hidden;border:1px solid #cbd9dc;border-radius:12px;background:radial-gradient(ellipse at 50% 50%,#e0e9d9 0%,#d1dec6 53%,#bdd8e5 54%,#b4d6e7 100%)}
+.memory-island{position:absolute;inset:7%;border:1px dashed #95b59b;border-radius:50%;pointer-events:none}
+.memory-centre{position:absolute;top:8px;left:10px;color:#355f66;font-size:11px;font-weight:700}
+.memory-pin{position:absolute;transform:translate(-50%,-50%);display:flex;align-items:center;justify-content:center;width:12px;height:12px;border-radius:50%;background:#3e8c67;color:#fff;font-size:12px;box-shadow:0 0 0 1px #fff8;pointer-events:auto}
+.memory-pin.camp{background:#206b98;width:20px;height:20px}.memory-pin.clay{background:#a6533d;width:17px;height:17px}.memory-pin.stale{opacity:.25}
+.memory-count{font-size:11px;color:#647a80;margin:9px 0 0}
