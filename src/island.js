@@ -238,6 +238,57 @@ export function mountIsland(element, onTick) {
       o.position.y=height(x,z)+(i===0?2.25:i===1?.4:.55);
     });
   };
+  // One of each natural item; when Supabase is configured, render the shared item instances.
+  const itemCatalogue=[
+    ['arrow','Arrow.glb',157,-209],['crate','crate-medium.glb',194,-178],
+    ['crowbar','crowbar_01_1k.glb',231,-147],['hammer','wooden_hammer_01_1k.glb',268,-116],
+    ['machete','machete_1k.glb',305,-85],['pocket_watch','pocket_watch_1k.glb',342,-54],
+    ['present','present-a-cube.glb',379,-23],['ranger_arrow','Ranger_Arrow.glb',416,8],
+    ['saw','handsaw_wood_1k.glb',28,-15],['searchlight','portable_searchlight_1k.glb',453,39],
+    ['spray_paint','spray_paint_bottles_1k.glb',490,70]
+  ];
+  const islandItemsRoot=new THREE.Group();scene.add(islandItemsRoot);
+  const itemLoader=new GLTFLoader();
+  const itemModels=new Map();
+  let itemsDisposed=false;
+  const itemBase=import.meta.env.BASE_URL||'/';
+  const renderIslandItems=instances=>{
+    if(itemsDisposed)return;
+    islandItemsRoot.clear();
+    for(const item of instances){
+      const template=itemModels.get(item.type_id);
+      if(!template)continue;
+      const model=template.clone(true),p=item.position||{};
+      const x=Number(p.x)||0,z=Number(p.z)||0;
+      model.position.set(x,height(x,z)+.12,z);
+      islandItemsRoot.add(model);
+    }
+  };
+  const fallbackItems=itemCatalogue.map(([type_id,,x,z])=>({type_id,position:{x,z}}));
+  let currentItems=fallbackItems;
+  const modelReady=()=>renderIslandItems(currentItems);
+  for(const [type_id,file] of itemCatalogue){
+    itemLoader.load(itemBase+'models/'+encodeURIComponent(file),gltf=>{
+      if(itemsDisposed)return;
+      const model=gltf.scene;
+      const bounds=new THREE.Box3().setFromObject(model),size=bounds.getSize(new THREE.Vector3());
+      const scale=1.5/Math.max(size.x,size.y,size.z,.001);
+      model.scale.setScalar(Math.min(scale,100));
+      model.updateMatrixWorld(true);
+      const box=new THREE.Box3().setFromObject(model);
+      model.position.y-=box.min.y;
+      model.traverse(node=>{if(node.isMesh){node.castShadow=true;node.receiveShadow=true}});
+      itemModels.set(type_id,model);modelReady();
+    },undefined,error=>console.warn('Island item model could not load:',file,error));
+  }
+  const itemUrl=import.meta.env.VITE_SUPABASE_URL,itemKey=import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+  if(itemUrl&&itemKey){
+    fetch(itemUrl+'/rest/v1/island_items?select=type_id,position,state&state=in.(ground,placed)',{
+      headers:{apikey:itemKey,Authorization:'Bearer '+itemKey}
+    }).then(r=>{if(!r.ok)throw Error('Item query '+r.status);return r.json()})
+      .then(items=>{if(!itemsDisposed&&Array.isArray(items)){currentItems=items;renderIslandItems(currentItems)}})
+      .catch(error=>console.warn('Using preview item locations:',error));
+  }
   const george=new THREE.Group();const shirt=new THREE.MeshStandardMaterial({color:0xe2b24e});const skin=new THREE.MeshStandardMaterial({color:0xe7b38b});const pants=new THREE.MeshStandardMaterial({color:0x354a60});
   const part=(geo,mat,x,y,z)=>{const p=new THREE.Mesh(geo,mat);p.position.set(x,y,z);p.castShadow=true;george.add(p);return p;};
   part(new THREE.CapsuleGeometry(.36,.9,4,8),shirt,0,1.8,0);part(new THREE.SphereGeometry(.32,12,12),skin,0,2.75,0);part(new THREE.CapsuleGeometry(.13,.65,4,8),pants,-.22,.8,0);part(new THREE.CapsuleGeometry(.13,.65,4,8),pants,.22,.8,0);part(new THREE.CapsuleGeometry(.12,.55,4,8),skin,-.5,1.8,0);part(new THREE.CapsuleGeometry(.12,.55,4,8),skin,.5,1.8,0);
@@ -378,5 +429,5 @@ export function mountIsland(element, onTick) {
     wetness=THREE.MathUtils.clamp(wetness+dt*((weather.rain||swimming)? .018 : -.008),0,1);
     const feelsLike=(weather.feelsLike??(temperature+daylight*(1-weather.cloud)*3))-(wetness*5);
     const thermal=feelsLike<12?'Cold':feelsLike>28?'Hot':'Comfortable';if(followGeorge){followTarget.copy(george.position).add(new THREE.Vector3(0,1.7,0));const delta=followTarget.sub(controls.target).multiplyScalar(1-Math.exp(-dt*3.5));controls.target.add(delta);camera.position.add(delta)}controls.update();constrainCamera();renderer.render(scene,camera);if(elapsed-last>2){last=elapsed;onTick?.({daylight,phase:cycle,georgeX:george.position.x,georgeZ:george.position.z,weather:weatherLabel,temperature:Math.round(temperature),thermal,swimming,wetness:Math.round(wetness*100),weatherSource:weather.source||'Simulated fallback',wind:Math.round(weather.wind||0),freshwaterNearby:freshwaterAt(george.position.x,george.position.z),georgeMoving:moved,atCamp:Math.hypot(george.position.x,george.position.z)<9,resting:resting&&Math.hypot(george.position.x,george.position.z)<9})}};
-  animate();return ()=>{disposed=true;cancelAnimationFrame(frame);observer.disconnect();renderer.domElement.removeEventListener('pointerdown',onDown);window.removeEventListener('pointerup',onUp);window.removeEventListener('keydown',onKeyDown);window.removeEventListener('keyup',onKeyUp);window.removeEventListener('blur',onBlur);actions.remove();controls.dispose();renderer.dispose();renderer.domElement.remove();scene.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material){const mats=Array.isArray(o.material)?o.material:[o.material];mats.forEach(m=>m.dispose())}})};
+  animate();return ()=>{disposed=true;itemsDisposed=true;cancelAnimationFrame(frame);observer.disconnect();renderer.domElement.removeEventListener('pointerdown',onDown);window.removeEventListener('pointerup',onUp);window.removeEventListener('keydown',onKeyDown);window.removeEventListener('keyup',onKeyUp);window.removeEventListener('blur',onBlur);actions.remove();controls.dispose();renderer.dispose();renderer.domElement.remove();scene.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material){const mats=Array.isArray(o.material)?o.material:[o.material];mats.forEach(m=>m.dispose())}})};
 }
