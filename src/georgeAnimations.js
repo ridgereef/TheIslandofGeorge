@@ -10,7 +10,7 @@ export function createGeorgeAnimationController(root) {
   const rotation = new THREE.Quaternion();
   let weight = 0;
   let current = 'idle';
-  const clipActions = new Set(['sit','saw','pickup','carry','build','drink','eat','sleep','look']);
+  const clipActions = new Set(['sit','saw','pickup','putdown','carry','build','drink','eat','sleep','look']);
   function offset(name, x=0, y=0, z=0, amount=weight) {
     const bone = bones.get(name);
     if (!bone || amount <= 0) return;
@@ -46,6 +46,10 @@ export function createGeorgeAnimationController(root) {
           offset('Hips',.45);offset('Spine',.55);
           offset('UpperLeg.L',-.55);offset('UpperLeg.R',-.55);
           offset('UpperArm.L',-1.15,0,-.22);offset('UpperArm.R',-1.15,0,.22);
+          break;
+        case 'putdown':
+          offset('Hips',.25);offset('Spine',.35);
+          offset('UpperArm.L',-.9,0,-.2);offset('UpperArm.R',-.9,0,.2);
           break;
         case 'carry':
           offset('UpperArm.L',-.75,0,-.38);offset('UpperArm.R',-.75,0,.38);
