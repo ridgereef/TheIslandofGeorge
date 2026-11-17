@@ -412,8 +412,28 @@ export function mountIsland(element, onTick) {
     },undefined,error=>console.warn('Island item model could not load:',file,error));
   }
   const itemUrl=import.meta.env.VITE_SUPABASE_URL,itemKey=import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+  const mudRoot=new THREE.Group();scene.add(mudRoot);
+  const mudGeo=new THREE.BoxGeometry(.48,.25,.48);
+  const mudMats={curing:new THREE.MeshStandardMaterial({color:0x694a32}),ready:new THREE.MeshStandardMaterial({color:0x986948}),placed:new THREE.MeshStandardMaterial({color:0x986948}),broken:new THREE.MeshStandardMaterial({color:0x584333})};
+  const renderMudBricks=bricks=>{
+    mudRoot.clear();
+    for(let i=0;i<bricks.length;i++){
+      const b=bricks[i],placed=b.status==='placed'||b.status==='broken';
+      const x=placed?Number(b.x):8+(i%7)*.55,z=placed?Number(b.z):8+Math.floor(i/7)*.55;
+      const mesh=new THREE.Mesh(mudGeo,mudMats[b.status]||mudMats.ready);
+      mesh.position.set(x,height(x,z)+.14+(placed?(Number(b.level)||0)*.25:0),z);
+      if(b.status==='broken')mesh.rotation.z=.35;
+      mesh.castShadow=true;mesh.receiveShadow=true;mudRoot.add(mesh);
+    }
+  };
+  let mudRefresh=null;
   let itemRefresh=null,cutTreeRefresh=null,carriedLogRefresh=null,eventRefresh=null,georgeHasLog=false;
   if(itemUrl&&itemKey){
+    const refreshMud=()=>fetch(itemUrl+'/rest/v1/island_mud_construction?select=id,status,x,z,level,site_x,site_z,structure_status&limit=500',{headers:{apikey:itemKey,Authorization:'Bearer '+itemKey}})
+      .then(r=>{if(!r.ok)throw Error('Mud construction '+r.status);return r.json()})
+      .then(bricks=>{if(!itemsDisposed&&Array.isArray(bricks))renderMudBricks(bricks)})
+      .catch(error=>console.warn('Mud construction refresh unavailable:',error));
+    refreshMud();mudRefresh=window.setInterval(refreshMud,15000);
     const refreshIslandItems=()=>fetch(itemUrl+'/rest/v1/island_items?select=id,type_id,position,state&state=in.(ground,placed)',{
       headers:{apikey:itemKey,Authorization:'Bearer '+itemKey}
     }).then(r=>{if(!r.ok)throw Error('Item query '+r.status);return r.json()})
