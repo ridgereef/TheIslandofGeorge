@@ -631,13 +631,19 @@ export function mountIsland(element, onTick) {
       if(Number.isFinite(x)&&Number.isFinite(z)){
         const px=george.position.x,pz=george.position.z;
         const delta=Math.hypot(x-px,z-pz);
-        // On first sync or after a large change, snap to the authoritative position.
-        if(!george.userData.hasSynced||delta>35){george.position.x=x;george.position.z=z;george.userData.hasSynced=true;}
-        else if(!sitting&&delta>.02){
-          const amount=Math.min(delta,2*Math.min(1,dt*2));
-          george.position.x+=((x-px)/delta)*amount;
-          george.position.z+=((z-pz)/delta)*amount;
-          moved=true;nextHeading=Math.atan2(x-px,z-pz);
+        // Snap only on the initial sync. Subsequent server updates are destinations,
+        // never teleports: walk towards them even when the server is far ahead.
+        if(!george.userData.hasSynced){
+          george.position.x=x;george.position.z=z;george.userData.hasSynced=true;
+        }else if(delta>.04){
+          // Catch up smoothly, bounded by a believable travel speed.
+          // Avoid per-frame fixed distance increments (which cause FPS-dependent movement).
+          const speed=THREE.MathUtils.clamp(delta*.22,1.7,4.2);
+          const amount=Math.min(delta,speed*Math.min(dt,.1));
+          george.position.x+=(x-px)/delta*amount;
+          george.position.z+=(z-pz)/delta*amount;
+          moved=amount>.001;
+          nextHeading=Math.atan2(x-px,z-pz);
         }
       }
     }
