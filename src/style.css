@@ -68,3 +68,8 @@ footer{color:#647a80}
 .auth-primary:disabled{opacity:.55}.auth-secondary{width:100%;border:1px solid #bbcfc9;border-radius:8px;background:#fff;padding:10px;color:#24694f;cursor:pointer}
 .auth-links{display:flex;gap:12px;flex-wrap:wrap;justify-content:center}.auth-links button{border:0;background:none;color:#237a59;text-decoration:underline;cursor:pointer;font-size:12px}
 @media(max-width:650px){.topbar .status{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:4px}.account-button{margin-right:4px}.auth-dialog{padding:22px}}
+
+/* Local visual daylight preview, visible only to signed-in admins */
+.admin-daylight-toggle{display:inline-flex;align-items:center;gap:7px;border:1px solid #b8d2ca;border-radius:20px;padding:7px 10px;background:#fff;color:#24694f;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;margin-right:8px}
+.admin-daylight-toggle input{accent-color:#237a59;width:15px;height:15px;margin:0;cursor:pointer}
+@media(max-width:650px){.admin-daylight-toggle{margin-right:3px;padding:6px 8px}}
