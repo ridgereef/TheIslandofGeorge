@@ -23,9 +23,9 @@ export function mountIsland(element, onTick) {
   let followGeorge=true;
   const followTarget=new THREE.Vector3();
   const setFollow=(enabled)=>{followGeorge=enabled;if(typeof followButton!=='undefined')followButton.setAttribute('aria-pressed',String(enabled))};
-  const onDown=()=>{renderer.domElement.style.cursor='grabbing';setFollow(false)};
+  const onDown=(event)=>{renderer.domElement.style.cursor='grabbing';if(event.button===1||event.button===2)setFollow(false)};
   const onWheel=()=>setFollow(false);
-  const onTouch=()=>setFollow(false);
+  const onTouch=(event)=>{if(event.touches.length>1)setFollow(false)};
   const onUp=()=>{renderer.domElement.style.cursor='grab'};
   renderer.domElement.addEventListener('pointerdown',onDown);
   renderer.domElement.addEventListener('wheel',onWheel,{passive:true});
@@ -36,7 +36,7 @@ export function mountIsland(element, onTick) {
   actions.setAttribute('aria-label','Island camera controls');
   const addButton=(label,title,fn)=>{
     const b=document.createElement('button');b.type='button';b.textContent=label;b.title=title;b.setAttribute('aria-label',title);
-    b.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();if(title!=='Reset camera and follow George')setFollow(false);fn();controls.update()});
+    b.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();if(title==='Zoom in'||title==='Zoom out')setFollow(false);fn();controls.update()});
     actions.appendChild(b);
   };
   const orbit=(dx,dy=0)=>{
