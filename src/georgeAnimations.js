@@ -18,7 +18,7 @@ export function createGeorgeAnimationController(root) {
   const neckEuler = new THREE.Euler(0,0,0,'YXZ');
   let weight = 0;
   let current = 'idle';
-  const clipActions = new Set(['walk','sit','saw','pickup','putdown','rummage','carry','build','drink','eat','sleep','look','think']);
+  const clipActions = new Set(['walk','sit','chop','saw','pickup','putdown','rummage','carry','build','drink','eat','sleep','look','think']);
   function offset(name, x=0, y=0, z=0, amount=weight) {
     const bone = bones.get(name);
     if (!bone || amount <= 0) return;
@@ -63,7 +63,7 @@ export function createGeorgeAnimationController(root) {
       // A pickup/rummage pose must never persist into walking or idle.
       // The GLB clips do not consistently key the torso, so explicitly restore
       // the neutral torso when an interaction finishes.
-      if(!['pickup','putdown','rummage'].includes(current)){
+      if(!['pickup','putdown','rummage','chop'].includes(current)){
         for(const name of ['Hips','Spine']){
           const bone=bones.get(name),base=bindRotations.get(name);
           if(bone&&base)bone.quaternion.copy(base);
@@ -93,6 +93,22 @@ export function createGeorgeAnimationController(root) {
           offset('UpperArm.L',.3+.06*Math.sin(t*.8),0,-.25);offset('UpperArm.R',.3+.06*Math.sin(t*.7),0,.25);
           aimHead(.05*Math.sin(t*.65),.13*Math.sin(t*.45));
           break;
+        case 'chop': {
+          // Two-handed overhead axe swing: wind-up, strike, recover.
+          const phase=(t*1.6)%1;
+          const strike=phase<.38?phase/.38:phase<.66?1-(phase-.38)/.28:0;
+          const wind=phase<.38?1-strike:phase<.66?0:(phase-.66)/.34;
+          offset('Spine',.10+.33*strike);
+          offset('Hips',.08+.15*strike);
+          offset('UpperArm.R',-1.35+.85*strike,0,.20);
+          offset('UpperArm.L',-1.35+.85*strike,0,-.18);
+          offset('LowerArm.R',-.6+.35*strike);
+          offset('LowerArm.L',-.6+.35*strike);
+          offset('UpperLeg.L',-.12-.10*strike);
+          offset('UpperLeg.R',-.12-.10*strike);
+          aimHead(.06+.08*strike,0);
+          break;
+        }
         case 'saw':
           offset('Spine',.2,0,.12);
           offset('UpperArm.L',-.9+.15*pulse,0,-.45);
