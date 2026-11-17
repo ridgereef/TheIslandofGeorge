@@ -674,6 +674,9 @@ export function mountIsland(element, onTick) {
   // No local fatigue timer: every visitor observes the same George.
   let sharedGeorge=null;
   let lastSurvivalEvent=null;
+  let crateInteraction=null;
+  let lastCrateEventKey='';
+  let crateWorldPosition=null;
   let sharedRefresh=null;
   if(itemUrl&&itemKey){
     const loadSharedGeorge=()=>fetch(itemUrl+'/rest/v1/world_state?select=position,inventory,needs&id=eq.1',{
@@ -686,6 +689,21 @@ export function mountIsland(element, onTick) {
     }).then(r=>r.ok?r.json():Promise.reject(Error('Action event query '+r.status)))
       .then(rows=>{if(!disposed)lastSurvivalEvent=rows?.[0]||null})
       .catch(error=>console.warn('Survival event unavailable:',error));
+    const loadCrateEvents=()=>fetch(itemUrl+'/rest/v1/island_item_events?select=event_type,created_at,details&event_type=in.(stored_item,retrieved_item,removed_item,took_item)&order=created_at.desc&limit=1',{headers:{apikey:itemKey,Authorization:'Bearer '+itemKey}})
+      .then(r=>r.ok?r.json():Promise.reject(Error('Crate event '+r.status)))
+      .then(rows=>{
+        const event=rows?.[0];if(!event||disposed)return;
+        const key=event.created_at+'|'+event.event_type+'|'+JSON.stringify(event.details||{});
+        const age=Date.now()-new Date(event.created_at).getTime();
+        if(key!==lastCrateEventKey){lastCrateEventKey=key;if(age>=0&&age<12000)crateInteraction={startedAt:performance.now(),event};}
+      }).catch(error=>console.warn('Crate interaction event unavailable',error));
+    const loadCratePosition=()=>fetch(itemUrl+'/rest/v1/island_items?select=id,position,owner,type_id&type_id=eq.crate&limit=10',{headers:{apikey:itemKey,Authorization:'Bearer '+itemKey}})
+      .then(r=>r.ok?r.json():Promise.reject(Error('Crate location '+r.status)))
+      .then(rows=>{if(!disposed){const crate=rows?.find(item=>item.owner==='camp'||item.owner==='george');crateWorldPosition=crate?.position||null}})
+      .catch(error=>console.warn('Crate location unavailable',error));
+    loadCrateEvents();loadCratePosition();
+    window.setInterval(loadCrateEvents,3000);
+    window.setInterval(loadCratePosition,12000);
     loadRecentEvent();
     eventRefresh=window.setInterval(loadRecentEvent,5000);
     loadSharedGeorge();
@@ -752,7 +770,18 @@ export function mountIsland(element, onTick) {
     const eventAge=lastSurvivalEvent?Date.now()-new Date(lastSurvivalEvent.created_at).getTime():Infinity;
     const recent=eventAge>=0&&eventAge<9000?lastSurvivalEvent.event_type:null;
     // Pause briefly at an item to visibly bend down and reach before continuing.
-    const pickingUp=(recent==='collected_item'||recent==='swapped_item')&&eventAge<2400;
+    const rummaging=!!crateInteraction&&performance.now()-crateInteraction.startedAt<7500;
+    if(crateInteraction&&!rummaging)crateInteraction=null;
+    const pickingUp=!rummaging&&(recent==='collected_item'||recent==='swapped_item')&&eventAge<2400;
+    if(rummaging&&crateWorldPosition){
+      const cx=Number(crateWorldPosition.x),cz=Number(crateWorldPosition.z);
+      const distanceToCrate=Math.hypot(cx-george.position.x,cz-george.position.z);
+      if(Number.isFinite(distanceToCrate)&&distanceToCrate<18&&distanceToCrate>.05){
+        // Character forward is +Z; face the crate while reaching inside.
+        nextHeading=Math.atan2(cx-george.position.x,cz-george.position.z);
+        george.rotation.y=nextHeading;
+      }
+    }
     const goal=String(sharedGeorge?.inventory?.current_goal||'').toLowerCase();
     const lastAction=String(sharedGeorge?.inventory?.last_action||'').toLowerCase();
     const needs=sharedGeorge?.needs||{};
@@ -773,12 +802,12 @@ export function mountIsland(element, onTick) {
     else if(goal.includes('investigate'))survivalPose='look';
     else if(!moved)survivalPose='think';
     // Do not infer an eating/drinking animation merely from low needs: wait for an actual action.
-    const desiredAction=moved&&!sitting&&!pickingUp?walkAction:idleAction;
+    const desiredAction=moved&&!sitting&&!pickingUp&&!rummaging?walkAction:idleAction;
     if(desiredAction&&desiredAction!==activeAction){activeAction?.fadeOut(.25);desiredAction.reset().fadeIn(.25).play();activeAction=desiredAction;}
     // Mixer updates first, then the procedural arm/leg/head offsets layer on top.
-    georgeAnimations?.update(dt,elapsed,pickingUp?'pickup':moved&&!sitting&&!walkAction?'walk':moved&&!sitting?'idle':survivalPose);
-    if(adventurer){const baseline=adventurer.userData.groundOffset??0;adventurer.position.y=THREE.MathUtils.lerp(adventurer.position.y,baseline-(sitting?.55:0)-(pickingUp?.24:0),Math.min(1,dt*8));}
-    if(moved)george.rotation.y=nextHeading;
+    georgeAnimations?.update(dt,elapsed,rummaging?'rummage':pickingUp?'pickup':moved&&!sitting&&!walkAction?'walk':moved&&!sitting?'idle':survivalPose);
+    if(adventurer){const baseline=adventurer.userData.groundOffset??0;adventurer.position.y=THREE.MathUtils.lerp(adventurer.position.y,baseline-(sitting?.55:0)-(pickingUp?.24:0)-(rummaging?.18:0),Math.min(1,dt*8));}
+    if(moved&&!rummaging)george.rotation.y=nextHeading;
     const ground=height(george.position.x,george.position.z);
     const swimming=ground< -1;
     george.position.y=(swimming?-2.3:ground)+(moved?Math.sin(elapsed*(swimming?3:7))*(swimming?.22:.035):0);
