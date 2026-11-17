@@ -222,7 +222,7 @@ export function mountIsland(element, onTick) {
   const treeObstacles=[],forestObstacles=[],regrowthObstacles=[];
   const gridKey=(x,z)=>Math.floor(x/CELL)+','+Math.floor(z/CELL);
   const registerObstacle=(x,z,radius)=>{
-    const obstacle={x,z,radius};obstacles.push(obstacle);
+    const obstacle={x,z,radius,baseRadius:radius};obstacles.push(obstacle);
     const minX=Math.floor((x-radius-1)/CELL),maxX=Math.floor((x+radius+1)/CELL);
     const minZ=Math.floor((z-radius-1)/CELL),maxZ=Math.floor((z+radius+1)/CELL);
     for(let gx=minX;gx<=maxX;gx++)for(let gz=minZ;gz<=maxZ;gz++){
@@ -240,6 +240,35 @@ export function mountIsland(element, onTick) {
       if((x-o.x)**2+(z-o.z)**2<r*r)return false;
     }
     return true;
+  };
+  // Sweep the complete movement segment, not just its endpoint. This prevents
+  // passing through a stump between frames or during an unstuck jump.
+  const segmentClear=(ax,az,bx,bz)=>{
+    const length=Math.hypot(bx-ax,bz-az);
+    const steps=Math.max(1,Math.ceil(length/.2));
+    for(let i=1;i<=steps;i++){
+      const t=i/steps;
+      if(!clearForGeorge(ax+(bx-ax)*t,az+(bz-az)*t))return false;
+    }
+    return true;
+  };
+  // Correct an already overlapping spawn, server sync or legacy position.
+  // Stumps have priority so George never remains standing inside a stump.
+  const resolveObstacleOverlap=(x,z)=>{
+    let nx=x,nz=z;
+    for(let iteration=0;iteration<5;iteration++){
+      let changed=false;
+      for(const o of nearbyObstacles(nx,nz)){
+        if(o.radius<=0)continue;
+        const radius=o.radius+.58,dx=nx-o.x,dz=nz-o.z,d=Math.hypot(dx,dz);
+        if(d<radius){
+          const ux=d>.0001?dx/d:Math.cos(iteration*2.4),uz=d>.0001?dz/d:Math.sin(iteration*2.4);
+          nx=o.x+ux*(radius+.04);nz=o.z+uz*(radius+.04);changed=true;
+        }
+      }
+      if(!changed)break;
+    }
+    return {x:nx,z:nz};
   };
   // Steer around obstacle circles before stepping; keep clearance for George's body.
   const avoidObstacleStep=(px,pz,tx,tz,distance)=>{
@@ -275,7 +304,7 @@ export function mountIsland(element, onTick) {
     candidates.push({x:ux,z:uz},{x:-uz,z:ux},{x:uz,z:-ux});
     for(const dir of candidates){
       const nx=px+dir.x*distance,nz=pz+dir.z*distance;
-      if(clearForGeorge(nx,nz)&&clearForGeorge(px+dir.x*Math.min(1.5,distance*2),pz+dir.z*Math.min(1.5,distance*2)))return {x:nx,z:nz};
+      if(clearForGeorge(nx,nz)&&segmentClear(px,pz,nx,nz))return {x:nx,z:nz};
     }
     return {x:px,z:pz};
   };
@@ -417,7 +446,7 @@ export function mountIsland(element, onTick) {
       const x=Number(p.x),z=Number(p.z);
       if(!Number.isFinite(x)||!Number.isFinite(z))continue;
       cutLocations.push({x,z});
-      forestObstacles.push({x,z,radius:.85});
+      forestObstacles.push({x,z,radius:1.05});
       const stump=new THREE.Mesh(stumpGeo,stumpMat);
       stump.position.set(x,height(x,z)+.35,z);
       stump.castShadow=true;stump.receiveShadow=true;stumpRoot.add(stump);
@@ -434,7 +463,7 @@ export function mountIsland(element, onTick) {
       if(best>=0)hidden.add(best);
     }
     const transform=new THREE.Matrix4().makeScale(0,0,0);
-    treeObstacles.forEach((o,i)=>{if(o)o.radius=hidden.has(i)?0:o.radius});
+    treeObstacles.forEach((o,i)=>{if(o)o.radius=hidden.has(i)?0:o.baseRadius});
     for(const i of hidden){trunks.setMatrixAt(i,transform);leaves.setMatrixAt(i,transform)}
     trunks.instanceMatrix.needsUpdate=true;leaves.instanceMatrix.needsUpdate=true;
   };
@@ -747,7 +776,7 @@ export function mountIsland(element, onTick) {
         // Snap only on the initial sync. Subsequent server updates are destinations,
         // never teleports: walk towards them even when the server is far ahead.
         if(!george.userData.hasSynced){
-          george.position.x=x;george.position.z=z;george.position.y=height(x,z);
+          const safeStart=resolveObstacleOverlap(x,z);george.position.x=safeStart.x;george.position.z=safeStart.z;george.position.y=height(safeStart.x,safeStart.z);
           george.userData.hasSynced=true;
           if(!initialCameraSynced){setDefaultGeorgeCamera();initialCameraSynced=true;}
         }else if(delta>.04&&!crateActive){
@@ -768,14 +797,15 @@ export function mountIsland(element, onTick) {
             // Five metres to his LEFT relative to the intended walking direction.
             const leftX=-dz,leftZ=dx;
             const attempts=[{x:px+leftX*5,z:pz+leftZ*5},{x:px-leftX*5,z:pz-leftZ*5},{x:px+leftX*5+dx*2,z:pz+leftZ*5+dz*2}];
-            const safe=attempts.find(p=>Math.hypot(p.x,p.z)<645&&clearForGeorge(p.x,p.z));
+            const safe=attempts.find(p=>Math.hypot(p.x,p.z)<645&&clearForGeorge(p.x,p.z)&&segmentClear(px,pz,p.x,p.z));
             if(safe){next=safe;george.userData.unstuckAt=Date.now();}
             george.userData.blockedFor=0;
           }
-          george.position.x=next.x;
-          george.position.z=next.z;
-          moved=Math.hypot(next.x-px,next.z-pz)>.001;
-          if(moved)nextHeading=Math.atan2(next.x-px,next.z-pz);
+          const corrected=resolveObstacleOverlap(next.x,next.z);
+          george.position.x=corrected.x;
+          george.position.z=corrected.z;
+          moved=Math.hypot(george.position.x-px,george.position.z-pz)>.001;
+          if(moved)nextHeading=Math.atan2(george.position.x-px,george.position.z-pz);
         }
       }
     }
@@ -799,11 +829,12 @@ export function mountIsland(element, onTick) {
           const candidate=avoidObstacleStep(george.position.x,george.position.z,cx,cz,step);
           // The crate itself may be a collision obstacle: stop short rather than walk through it.
           if(Math.hypot(candidate.x-cx,candidate.z-cz)>=stoppingDistance-.02){
-            george.position.x=candidate.x;george.position.z=candidate.z;
+            if(segmentClear(george.position.x,george.position.z,candidate.x,candidate.z)){george.position.x=candidate.x;george.position.z=candidate.z;}
           }
         }else if(distanceToCrate<stoppingDistance-.05){
           const ux=(george.position.x-cx)/distanceToCrate,uz=(george.position.z-cz)/distanceToCrate;
-          george.position.x=cx+ux*stoppingDistance;george.position.z=cz+uz*stoppingDistance;
+          const candidateX=cx+ux*stoppingDistance,candidateZ=cz+uz*stoppingDistance;
+          if(clearForGeorge(candidateX,candidateZ)&&segmentClear(george.position.x,george.position.z,candidateX,candidateZ)){george.position.x=candidateX;george.position.z=candidateZ;}
         }
         nextHeading=Math.atan2(cx-george.position.x,cz-george.position.z);
         george.rotation.y=nextHeading;
@@ -835,6 +866,8 @@ export function mountIsland(element, onTick) {
     georgeAnimations?.update(dt,elapsed,rummaging?'rummage':pickingUp?'pickup':moved&&!sitting&&!walkAction?'walk':moved&&!sitting?'idle':survivalPose);
     if(adventurer){const baseline=adventurer.userData.groundOffset??0;adventurer.position.y=THREE.MathUtils.lerp(adventurer.position.y,baseline-(sitting?.55:0)-(pickingUp?.24:0)-(rummaging?.18:0),Math.min(1,dt*8));}
     if(moved&&!rummaging)george.rotation.y=nextHeading;
+    const solidPosition=resolveObstacleOverlap(george.position.x,george.position.z);
+    george.position.x=solidPosition.x;george.position.z=solidPosition.z;
     const ground=height(george.position.x,george.position.z);
     const swimming=ground< -1;
     george.position.y=(swimming?-2.3:ground)+(moved?Math.sin(elapsed*(swimming?3:7))*(swimming?.22:.035):0);
