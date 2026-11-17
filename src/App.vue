@@ -11,7 +11,6 @@ const timeLabel=computed(()=>phase.value<.09?'Dawn':phase.value<.2?'Morning':pha
 const mood=computed(()=>world.value?.emotions?'Curious':'Curious');
 const needs=computed(()=>{const n=world.value?.needs||{};return [['Health',n.health??100],['Hunger',n.hunger??100],['Thirst',n.thirst??100],['Morale',n.morale??100]]});
 async function loadData(){if(!client){loading.value=false;return}try{const [w,j]=await Promise.all([client.from('world_state').select('day,status,needs,emotions,stimulation,boredom,novelty_drive,clock_discovered').eq('id',1).maybeSingle(),client.from('george_journal').select('id,island_day,perceived_time,title,entry,created_at').order('island_day',{ascending:false}).order('island_minute',{ascending:false}).limit(20)]);if(w.error||j.error)throw w.error||j.error;world.value=w.data;journal.value=j.data||[];connected.value=true}catch(e){connected.value=false;console.warn('Read-only Supabase data unavailable',e)}finally{loading.value=false}}
-}
 onMounted(()=>{dispose=mountIsland(canvas.value,({phase:p,daylight:d})=>{phase.value=p;daylight.value=d});loadData();refresh=setInterval(loadData,60000)});
 onUnmounted(()=>{dispose?.();clearInterval(refresh)});
 </script>
