@@ -235,6 +235,7 @@ export function mountIsland(element, onTick) {
   const nearbyObstacles=(x,z)=>[...(obstacleGrid.get(gridKey(x,z))||[]),...forestObstacles.filter(o=>Math.abs(o.x-x)<12&&Math.abs(o.z-z)<12),...regrowthObstacles.filter(o=>Math.abs(o.x-x)<12&&Math.abs(o.z-z)<12)];
   const clearForGeorge=(x,z)=>{
     for(const o of nearbyObstacles(x,z)){
+      if(o.radius<=0)continue;
       const r=o.radius+.48;
       if((x-o.x)**2+(z-o.z)**2<r*r)return false;
     }
@@ -251,7 +252,7 @@ export function mountIsland(element, onTick) {
     const seen=new Set();
     for(let d=0;d<=lookahead;d+=3){
       for(const o of nearbyObstacles(px+ux*d,pz+uz*d)){
-        if(seen.has(o))continue;seen.add(o);
+        if(seen.has(o)||o.radius<=0)continue;seen.add(o);
         const along=(o.x-px)*ux+(o.z-pz)*uz;
         const side=Math.abs((o.x-px)*uz-(o.z-pz)*ux);
         if(along>=-1&&along<lookahead+o.radius&&side<o.radius+1.15&&along<nearestAlong){
