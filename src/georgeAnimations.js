@@ -18,7 +18,7 @@ export function createGeorgeAnimationController(root) {
   const neckEuler = new THREE.Euler(0,0,0,'YXZ');
   let weight = 0;
   let current = 'idle';
-  const clipActions = new Set(['sit','saw','pickup','putdown','carry','build','drink','eat','sleep','look','think']);
+  const clipActions = new Set(['walk','sit','saw','pickup','putdown','carry','build','drink','eat','sleep','look','think']);
   function offset(name, x=0, y=0, z=0, amount=weight) {
     const bone = bones.get(name);
     if (!bone || amount <= 0) return;
@@ -65,6 +65,18 @@ export function createGeorgeAnimationController(root) {
       aimHead(0,0,weight);
       const pulse=Math.sin(t*5),slow=Math.sin(t*1.3);
       switch(current) {
+        case 'walk': {
+          // Fallback gait if the GLB has no identifiable walking clip.
+          // Animate from bind pose, never accumulate limb rotations.
+          const stride=Math.sin(t*8),counter=Math.sin(t*8+Math.PI);
+          offset('UpperLeg.L',stride*.42,0,0,1);
+          offset('UpperLeg.R',counter*.42,0,0,1);
+          offset('LowerLeg.L',Math.max(0,-stride)*.55,0,0,1);
+          offset('LowerLeg.R',Math.max(0,-counter)*.55,0,0,1);
+          offset('UpperArm.L',-stride*.3,0,0,1);
+          offset('UpperArm.R',-counter*.3,0,0,1);
+          break;
+        }
         case 'sit':
           offset('Hips',-.08,0,0);
           offset('UpperLeg.L',-.85,0,.06);offset('UpperLeg.R',-.85,0,-.06);
