@@ -551,16 +551,35 @@ export function mountIsland(element, onTick, visualOptions={}) {
   const rabbitEar=new THREE.CapsuleGeometry(.12,.55,3,6);
   const rabbitFur=new THREE.MeshStandardMaterial({color:0x9a8165,roughness:1});
   const rabbitEye=new THREE.MeshStandardMaterial({color:0x191713});
+  const rabbitMeshes=new Map();
   const renderRabbits=(rows)=>{
-    rabbitRoot.clear();
+    const live=new Set(rows.map(r=>String(r.id)));
+    for(const [id,entry] of rabbitMeshes)if(!live.has(id)){rabbitRoot.remove(entry.group);rabbitMeshes.delete(id);}
     for(const rabbit of rows){
-      const x=Number(rabbit.x),z=Number(rabbit.z),y=height(x,z);
-      const group=new THREE.Group();group.position.set(x,y+.65,z);
-      const body=new THREE.Mesh(rabbitBody,rabbitFur);body.scale.set(1,.7,.65);group.add(body);
-      const head=new THREE.Mesh(rabbitHead,rabbitFur);head.position.set(.65,.25,0);group.add(head);
-      for(const side of [-1,1]){const ear=new THREE.Mesh(rabbitEar,rabbitFur);ear.position.set(.72,.83,side*.2);ear.rotation.z=side*.12;group.add(ear);}
-      const eye=new THREE.Mesh(new THREE.SphereGeometry(.07,6,5),rabbitEye);eye.position.set(.96,.35,.28);group.add(eye);
-      rabbitRoot.add(group);
+      const id=String(rabbit.id),x=Number(rabbit.x),z=Number(rabbit.z);
+      let entry=rabbitMeshes.get(id);
+      if(!entry){
+        const group=new THREE.Group();group.position.set(x,height(x,z)+.65,z);
+        const body=new THREE.Mesh(rabbitBody,rabbitFur);body.scale.set(1,.7,.65);group.add(body);
+        const head=new THREE.Mesh(rabbitHead,rabbitFur);head.position.set(.65,.25,0);group.add(head);
+        for(const side of [-1,1]){const ear=new THREE.Mesh(rabbitEar,rabbitFur);ear.position.set(.72,.83,side*.2);ear.rotation.z=side*.12;group.add(ear);}
+        const eye=new THREE.Mesh(new THREE.SphereGeometry(.07,6,5),rabbitEye);eye.position.set(.96,.35,.28);group.add(eye);
+        rabbitRoot.add(group);entry={group,targetX:x,targetZ:z,phase:Math.random()*Math.PI*2};rabbitMeshes.set(id,entry);
+      }
+      entry.targetX=x;entry.targetZ=z;
+    }
+  };
+  const animateRabbits=(dt)=>{
+    for(const entry of rabbitMeshes.values()){
+      const g=entry.group,dx=entry.targetX-g.position.x,dz=entry.targetZ-g.position.z,dist=Math.hypot(dx,dz);
+      if(dist>.015){
+        const travel=Math.min(dist,dt*Math.max(.5,dist/4));
+        g.position.x+=dx/dist*travel;g.position.z+=dz/dist*travel;
+        g.rotation.y=Math.atan2(-dz,dx);
+        entry.phase+=dt*10;
+      }
+      const ground=height(g.position.x,g.position.z);
+      g.position.y=ground+.65+(dist>.015?Math.max(0,Math.sin(entry.phase))*.14:0);
     }
   };
   let rabbitRefresh;
@@ -841,7 +860,7 @@ export function mountIsland(element, onTick, visualOptions={}) {
     sharedRefresh=window.setInterval(loadSharedGeorge,5000);loadFish();fishRefresh=window.setInterval(loadFish,15000);
   }
   let frame,elapsed=0,last=0,disposed=false;const clock=new THREE.Clock();const resize=()=>{const w=element.clientWidth,h=Math.max(280,element.clientHeight);renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix()};const observer=new ResizeObserver(resize);observer.observe(element);resize();
-  const animate=()=>{if(disposed)return;frame=requestAnimationFrame(animate);const dt=Math.min(clock.getDelta(),.1);elapsed+=dt;adventurerMixer?.update(dt);moveUnlockedCamera(dt);const actualCycle=getDayPhase(),cycle=visualOptions.forceDaylight?.() ? .5 : actualCycle,angle=cycle*Math.PI*2;
+  const animate=()=>{if(disposed)return;frame=requestAnimationFrame(animate);const dt=Math.min(clock.getDelta(),.1);elapsed+=dt;adventurerMixer?.update(dt);animateRabbits(dt);moveUnlockedCamera(dt);const actualCycle=getDayPhase(),cycle=visualOptions.forceDaylight?.() ? .5 : actualCycle,angle=cycle*Math.PI*2;
     // Approximate daylight window 06:00–20:00 NZ local time, with smooth twilight.
     const hour=cycle*24;
     const smooth=(a,b,v)=>{const t=THREE.MathUtils.clamp((v-a)/(b-a),0,1);return t*t*(3-2*t)};
