@@ -10,7 +10,7 @@ export function mountIsland(element, onTick) {
   controls.dampingFactor=.075;
   controls.enablePan=true;
   controls.enableZoom=true;
-  controls.minDistance=5;
+  controls.minDistance=1.2;
   controls.maxDistance=2600;
   controls.minPolarAngle=.12;
   controls.maxPolarAngle=Math.PI/2-.035;
@@ -52,7 +52,7 @@ export function mountIsland(element, onTick) {
   followButton.type='button';followButton.textContent='◎';followButton.title='Follow George';followButton.setAttribute('aria-label','Follow George');followButton.setAttribute('aria-pressed','true');
   followButton.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();setFollow(!followGeorge);if(followGeorge){const target=george.position.clone().add(new THREE.Vector3(0,2,0));const shift=target.clone().sub(controls.target);camera.position.add(shift);controls.target.copy(target);controls.update()}});
   actions.appendChild(followButton);
-  addButton('⌂','Reset camera and follow George',()=>{setFollow(true);const target=george.position.clone().add(new THREE.Vector3(0,2,0));controls.target.copy(target);camera.position.copy(target).add(new THREE.Vector3(15,9,22));camera.lookAt(controls.target)});
+  addButton('⌂','Reset camera and follow George',()=>{setFollow(true);const target=george.position.clone().add(new THREE.Vector3(0,2,0));controls.target.copy(target);camera.position.copy(target).add(new THREE.Vector3(0.65,0.55,1.25));camera.lookAt(controls.target)});
   element.appendChild(actions);
   const hemi=new THREE.HemisphereLight(0xb8dfff,0x304f38,2.1);scene.add(hemi);
   const sun=new THREE.DirectionalLight(0xffe3b0,2.4);sun.position.set(-15,25,10);sun.castShadow=true;sun.shadow.mapSize.set(1024,1024);sun.shadow.camera.left=-900;sun.shadow.camera.right=900;sun.shadow.camera.top=900;sun.shadow.camera.bottom=-900;scene.add(sun);
