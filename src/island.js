@@ -36,7 +36,7 @@ export function mountIsland(element, onTick) {
   actions.setAttribute('aria-label','Island camera controls');
   const addButton=(label,title,fn)=>{
     const b=document.createElement('button');b.type='button';b.textContent=label;b.title=title;b.setAttribute('aria-label',title);
-    b.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();if(title==='Zoom in'||title==='Zoom out')setFollow(false);fn();controls.update()});
+    b.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();if(title==='Zoom in'||title==='Zoom out')setFollow(false);fn();controls.update();constrainCamera()});
     actions.appendChild(b);
   };
   const orbit=(dx,dy=0)=>{
@@ -69,6 +69,32 @@ export function mountIsland(element, onTick) {
     const mountain=210*Math.exp(-((x+235)**2+(z-150)**2)/(2*160**2));
     const ridge=130*Math.exp(-((x-160)**2+(z+215)**2)/(2*200**2));
     return r>coast+35?-5:Math.max(-5,4+inland*(24+hills+mountain+ridge));
+  };
+  // Keep the viewing camera above terrain and outside hills when orbiting or zooming.
+  const CAMERA_CLEARANCE=.65;
+  const cameraRay=new THREE.Vector3(),cameraPoint=new THREE.Vector3();
+  const constrainCamera=()=>{
+    const target=controls.target;
+    cameraRay.copy(camera.position).sub(target);
+    const distance=cameraRay.length();
+    if(distance<.001)return;
+    cameraRay.divideScalar(distance);
+    // Find the first obstruction along the sight line, so hills cannot sit between George and the camera.
+    const samples=Math.min(320,Math.max(16,Math.ceil(distance/4)));
+    let safeDistance=distance;
+    for(let i=1;i<=samples;i++){
+      const d=distance*i/samples;
+      cameraPoint.copy(target).addScaledVector(cameraRay,d);
+      const surface=Math.max(-5,height(cameraPoint.x,cameraPoint.z));
+      if(cameraPoint.y<surface+CAMERA_CLEARANCE){
+        safeDistance=Math.max(1.2,d-distance/samples);
+        break;
+      }
+    }
+    if(safeDistance<distance)camera.position.copy(target).addScaledVector(cameraRay,safeDistance);
+    const surface=Math.max(-5,height(camera.position.x,camera.position.z));
+    if(camera.position.y<surface+CAMERA_CLEARANCE)camera.position.y=surface+CAMERA_CLEARANCE;
+    camera.lookAt(target);
   };
   const water=mesh(new THREE.PlaneGeometry(6500,6500),0x238aab,0,-5,0,false);water.rotation.x=-Math.PI/2;
   const geo=new THREE.PlaneGeometry(1600,1600,180,180);geo.rotateX(-Math.PI/2);
@@ -202,6 +228,6 @@ export function mountIsland(element, onTick) {
     george.rotation.y=Math.atan2(Math.cos(wander*.12),-Math.sin(wander*.12));
     wetness=THREE.MathUtils.clamp(wetness+dt*((weather.rain||swimming)? .018 : -.008),0,1);
     const feelsLike=(weather.feelsLike??(temperature+daylight*(1-weather.cloud)*3))-(wetness*5);
-    const thermal=feelsLike<12?'Cold':feelsLike>28?'Hot':'Comfortable';if(followGeorge){followTarget.copy(george.position).add(new THREE.Vector3(0,2,0));const delta=followTarget.sub(controls.target).multiplyScalar(1-Math.exp(-dt*3.5));controls.target.add(delta);camera.position.add(delta)}controls.update();renderer.render(scene,camera);if(elapsed-last>2){last=elapsed;onTick?.({daylight,phase:cycle,georgeX:george.position.x,georgeZ:george.position.z,weather:weatherLabel,temperature:Math.round(temperature),thermal,swimming,wetness:Math.round(wetness*100),weatherSource:weather.source||'Simulated fallback',wind:Math.round(weather.wind||0)})}};
+    const thermal=feelsLike<12?'Cold':feelsLike>28?'Hot':'Comfortable';if(followGeorge){followTarget.copy(george.position).add(new THREE.Vector3(0,2,0));const delta=followTarget.sub(controls.target).multiplyScalar(1-Math.exp(-dt*3.5));controls.target.add(delta);camera.position.add(delta)}controls.update();constrainCamera();renderer.render(scene,camera);if(elapsed-last>2){last=elapsed;onTick?.({daylight,phase:cycle,georgeX:george.position.x,georgeZ:george.position.z,weather:weatherLabel,temperature:Math.round(temperature),thermal,swimming,wetness:Math.round(wetness*100),weatherSource:weather.source||'Simulated fallback',wind:Math.round(weather.wind||0)})}};
   animate();return ()=>{disposed=true;cancelAnimationFrame(frame);observer.disconnect();renderer.domElement.removeEventListener('pointerdown',onDown);renderer.domElement.removeEventListener('wheel',onWheel);renderer.domElement.removeEventListener('touchstart',onTouch);window.removeEventListener('pointerup',onUp);actions.remove();controls.dispose();renderer.dispose();renderer.domElement.remove();scene.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material){const mats=Array.isArray(o.material)?o.material:[o.material];mats.forEach(m=>m.dispose())}})};
 }
