@@ -327,7 +327,7 @@ export function mountIsland(element, onTick) {
   };
   // One of each natural item; when Supabase is configured, render the shared item instances.
   const itemCatalogue=[
-    ['arrow','Arrow.glb',157,-209],['crate','crate-medium.glb',194,-178],
+    ['apple','food_apple_01_1k.glb',0,0],['arrow','Arrow.glb',157,-209],['crate','crate-medium.glb',194,-178],
     ['crowbar','crowbar_01_1k.glb',231,-147],['hammer','wooden_hammer_01_1k.glb',268,-116],
     ['machete','machete_1k.glb',305,-85],['pocket_watch','pocket_watch_1k.glb',342,-54],
     ['present','present-a-cube.glb',379,-23],['ranger_arrow','Ranger_Arrow.glb',416,8],
@@ -390,11 +390,11 @@ export function mountIsland(element, onTick) {
       const template=itemModels.get(item.type_id);
       if(!template)continue;
       const model=template.clone(true);
-      model.position.set(x,height(x,z)+.12,z);
+      model.position.set(x,height(x,z)+(item.type_id==='apple'?.03:.12),z);
       islandItemsRoot.add(model);
     }
   };
-  const fallbackItems=itemCatalogue.map(([type_id,,x,z])=>({type_id,position:{x,z}}));
+  const fallbackItems=itemCatalogue.filter(([type_id])=>type_id!=='apple').map(([type_id,,x,z])=>({type_id,position:{x,z}}));
   let currentItems=fallbackItems;
   const modelReady=()=>renderIslandItems(currentItems);
   for(const [type_id,file] of itemCatalogue){
@@ -402,7 +402,7 @@ export function mountIsland(element, onTick) {
       if(itemsDisposed)return;
       const model=gltf.scene;
       const bounds=new THREE.Box3().setFromObject(model),size=bounds.getSize(new THREE.Vector3());
-      const scale=1.5/Math.max(size.x,size.y,size.z,.001);
+      const scale=(type_id==='apple'?.22:1.5)/Math.max(size.x,size.y,size.z,.001);
       model.scale.setScalar(Math.min(scale,100));
       model.updateMatrixWorld(true);
       const box=new THREE.Box3().setFromObject(model);
@@ -587,6 +587,7 @@ export function mountIsland(element, onTick) {
     let survivalPose='idle';
     if(sitting)survivalPose='sit';
     else if(recent==='tree_cut')survivalPose='saw';
+    else if(recent==='ate_apple')survivalPose='eat';
     else if(recent==='collected_item'||recent==='swapped_item')survivalPose='pickup';
     else if(recent==='dropped_item')survivalPose='putdown';
     else if(recent==='stored_item')survivalPose='putdown';
