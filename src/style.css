@@ -3,3 +3,10 @@
 .scene{position:relative;touch-action:none}.scene canvas{touch-action:none}.camera-buttons{position:absolute;right:14px;bottom:14px;z-index:5;display:flex;gap:6px;pointer-events:auto}.camera-buttons button{border:1px solid #ffffff65;background:#071c25dd;color:#f3fff9;min-width:36px;height:36px;border-radius:8px;cursor:pointer;font-size:21px;line-height:1;box-shadow:0 2px 8px #0005}.camera-buttons button:hover,.camera-buttons button:focus-visible{background:#23675d;outline:2px solid #c1ead5}.scene-overlay{z-index:2}
 
 .world-column{display:flex;flex-direction:column;gap:20px;min-width:0}.survival-panel{overflow:visible}.survival-panel .meters{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:17px 25px;margin-top:22px}.survival-note{margin:20px 0 0}.thought-panel{min-height:230px}.thought-text{font-size:16px;line-height:1.85;color:#e4f5ec;margin:20px 0;font-weight:500}.thought-disclaimer{font-size:11px;margin:12px 0 0}@media(max-width:550px){.survival-panel .meters{grid-template-columns:1fr}.world-column{gap:12px}}
+
+/* Constrain the journal so frequent autonomous entries never stretch the sidebar. */
+.journal-scroll{max-height:420px;overflow-y:auto;overscroll-behavior:contain;padding-right:8px;scrollbar-width:thin;scrollbar-color:#568b83 #16353d}
+.journal-scroll:focus-visible{outline:2px solid #8fd5a7;outline-offset:3px;border-radius:6px}
+.journal-scroll .entry:first-child{padding-top:14px}
+.journal-scroll .entry:last-child{border-bottom:0}
+@media(max-width:600px){.journal-scroll{max-height:340px}}
