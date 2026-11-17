@@ -221,10 +221,10 @@ export function mountIsland(element, onTick) {
   const gridKey=(x,z)=>Math.floor(x/CELL)+','+Math.floor(z/CELL);
   const registerObstacle=(x,z,radius)=>{
     const obstacle={x,z,radius};obstacles.push(obstacle);
-    const reach=Math.ceil(radius/CELL);
-    const gx=Math.floor(x/CELL),gz=Math.floor(z/CELL);
-    for(let dx=-reach;dx<=reach;dx++)for(let dz=-reach;dz<=reach;dz++){
-      const key=(gx+dx)+','+(gz+dz);
+    const minX=Math.floor((x-radius-1)/CELL),maxX=Math.floor((x+radius+1)/CELL);
+    const minZ=Math.floor((z-radius-1)/CELL),maxZ=Math.floor((z+radius+1)/CELL);
+    for(let gx=minX;gx<=maxX;gx++)for(let gz=minZ;gz<=maxZ;gz++){
+      const key=gx+','+gz;
       if(!obstacleGrid.has(key))obstacleGrid.set(key,[]);
       obstacleGrid.get(key).push(obstacle);
     }
@@ -236,6 +236,44 @@ export function mountIsland(element, onTick) {
       if((x-o.x)**2+(z-o.z)**2<r*r)return false;
     }
     return true;
+  };
+  // Steer around obstacle circles before stepping; keep clearance for George's body.
+  const avoidObstacleStep=(px,pz,tx,tz,distance)=>{
+    const dx=tx-px,dz=tz-pz,goalDist=Math.hypot(dx,dz);
+    if(goalDist<.001)return {x:px,z:pz};
+    const ux=dx/goalDist,uz=dz/goalDist;
+    const lookahead=Math.min(9,Math.max(3,distance*5));
+    let nearest=null,nearestAlong=Infinity;
+    // Inspect nearby grid cells along the path, not just the current cell.
+    const seen=new Set();
+    for(let d=0;d<=lookahead;d+=3){
+      for(const o of nearbyObstacles(px+ux*d,pz+uz*d)){
+        if(seen.has(o))continue;seen.add(o);
+        const along=(o.x-px)*ux+(o.z-pz)*uz;
+        const side=Math.abs((o.x-px)*uz-(o.z-pz)*ux);
+        if(along>=-1&&along<lookahead+o.radius&&side<o.radius+1.15&&along<nearestAlong){
+          nearest=o;nearestAlong=along;
+        }
+      }
+    }
+    const candidates=[];
+    if(nearest){
+      const vx=px-nearest.x,vz=pz-nearest.z;
+      const cross=ux*vz-uz*vx;
+      const preferred=cross>=0?1:-1;
+      for(const sign of [preferred,-preferred]){
+        const waypointX=nearest.x+(-uz*sign)*(nearest.radius+2.4)+ux*(nearest.radius+2.4);
+        const waypointZ=nearest.z+(ux*sign)*(nearest.radius+2.4)+uz*(nearest.radius+2.4);
+        const length=Math.hypot(waypointX-px,waypointZ-pz);
+        if(length>.01)candidates.push({x:(waypointX-px)/length,z:(waypointZ-pz)/length});
+      }
+    }
+    candidates.push({x:ux,z:uz},{x:-uz,z:ux},{x:uz,z:-ux});
+    for(const dir of candidates){
+      const nx=px+dir.x*distance,nz=pz+dir.z*distance;
+      if(clearForGeorge(nx,nz)&&clearForGeorge(px+dir.x*Math.min(1.5,distance*2),pz+dir.z*Math.min(1.5,distance*2)))return {x:nx,z:nz};
+    }
+    return {x:px,z:pz};
   };
   const count=1700,trunks=new THREE.InstancedMesh(trunkGeo,trunkMat,count),leaves=new THREE.InstancedMesh(leafGeo,leafMat,count),dummy=new THREE.Object3D();
   for(let i=0;i<count;i++){const angle=rand(i+20)*Math.PI*2,r=Math.sqrt(rand(i+400))*620,x=Math.cos(angle)*r,z=Math.sin(angle)*r,y=height(x,z),scale=.7+rand(i+900)*1.1;
@@ -640,10 +678,11 @@ export function mountIsland(element, onTick) {
           // Avoid per-frame fixed distance increments (which cause FPS-dependent movement).
           const speed=THREE.MathUtils.clamp(delta*.22,1.7,4.2);
           const amount=Math.min(delta,speed*Math.min(dt,.1));
-          george.position.x+=(x-px)/delta*amount;
-          george.position.z+=(z-pz)/delta*amount;
-          moved=amount>.001;
-          nextHeading=Math.atan2(x-px,z-pz);
+          const next=avoidObstacleStep(px,pz,x,z,amount);
+          george.position.x=next.x;
+          george.position.z=next.z;
+          moved=Math.hypot(next.x-px,next.z-pz)>.001;
+          if(moved)nextHeading=Math.atan2(next.x-px,next.z-pz);
         }
       }
     }
