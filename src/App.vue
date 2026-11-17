@@ -17,29 +17,7 @@ const emotions=computed(()=>{const e=world.value?.emotions||{};return [['Joy',e.
 const project=computed(()=>world.value?.project||null);
 const inventorySummary=computed(()=>world.value?.items||[]); const carriedItems=computed(()=>inventorySummary.value.filter(i=>i.owner==='george'&&i.state==='inventory')); const storedItems=computed(()=>inventorySummary.value.filter(i=>i.owner==='camp')); const itemLabel=(type)=>String(type||'Unknown item').replaceAll('_',' ').replace(/\b\w/g,c=>c.toUpperCase()); const journalTimestamp=(timestamp)=>{if(!timestamp)return null;const d=new Date(timestamp);return Number.isNaN(d.getTime())?null:new Intl.DateTimeFormat('en-NZ',{dateStyle:'medium',timeStyle:'short',timeZone:'Pacific/Auckland'}).format(d)+' NZ time';};
 const needs=computed(()=>{const n=connected.value&&world.value?.needs?world.value.needs:previewNeeds.value;return [['Health',n.health??100],['Hunger',n.hunger??100],['Thirst',n.thirst??100],['Morale',n.morale??100],['Energy',n.energy??100],['Warmth',n.warmth??100]]});
-// Survival percentages represent reserves, not an immediate death timer.
-// 100 -> 0 thirst in ~48 hours without water at rest; heat/activity accelerate loss.
-const SURVIVAL_KEY='george-survival-preview-v2';
-let lastDrink=0;
-try{const saved=JSON.parse(localStorage.getItem(SURVIVAL_KEY)||'null');if(saved?.needs&&Number.isFinite(saved.at)){previewNeeds.value=saved.needs;lastSurvivalUpdate=Math.max(saved.at,Date.now()-48*3600000)}}catch{}
-function advanceSurvival({thermal,swimming,wetness,freshwaterNearby,georgeMoving,resting}){
- const now=Date.now(),minutes=Math.max(0,Math.min((now-lastSurvivalUpdate)/60000,48*60));lastSurvivalUpdate=now;
- const n=previewNeeds.value,hot=thermal==='Hot',cold=thermal==='Cold';
- const thirst=Math.max(0,n.thirst-minutes*(100/(48*60))*(1+(hot?.45:0)+(swimming?.3:0)+(georgeMoving?.15:0)));
- const hunger=Math.max(0,n.hunger-minutes*(100/(14*24*60))*(1+(swimming?.35:0)+(georgeMoving?.15:0)));
- const exposure=cold&&wetness>40?.015:0;
- const damage=minutes*((thirst<15?.045:0)+(hunger<10?.012:0)+exposure);
- const morale=Math.max(0,n.morale-minutes*(.004+(thirst<25?.01:0)));
- const energy=Math.max(0,Math.min(100,(n.energy??100)+minutes*(resting?1.25:-(georgeMoving?.085:.025))));
- const canDrink=freshwaterNearby&&!swimming&&now-lastDrink>120000&&thirst<85;
- const replenished=canDrink?100:thirst;
- if(canDrink)lastDrink=now;
- previewNeeds.value={health:Math.max(0,n.health-damage),hunger,thirst:replenished,morale,energy};
- // Seek only fresh river water. Sea swimming never replenishes thirst.
- window.__georgeNeedsRest=energy<25||(resting&&energy<92);
- window.__georgeNeedsWater=replenished<65&&!window.__georgeNeedsRest;
- try{localStorage.setItem(SURVIVAL_KEY,JSON.stringify({at:now,needs:previewNeeds.value}))}catch{}
-}
+// Survival is authoritative in Supabase. No browser-side needs, calorie, or weight simulation.
 async function loadData(){if(!client){loading.value=false;return}try{const [w,j,d,items,projectData]=await Promise.all([client.from('world_state').select('day,status,needs,inventory,emotions,stimulation,boredom,novelty_drive,clock_discovered').eq('id',1).maybeSingle(),client.from('george_journal').select('id,island_day,perceived_time,title,entry,created_at').order('island_day',{ascending:false}).order('island_minute',{ascending:false}).limit(20),client.from('george_decisions').select('goal,thought,created_at').order('created_at',{ascending:false}).limit(1).maybeSingle(),client.from('island_items').select('id,type_id,state,owner,durability').in('owner',['george','camp']),client.from('george_public_projects').select('*').eq('id',1).maybeSingle()]);if(w.error||j.error)throw w.error||j.error;world.value={...w.data,items:items.error?[]:items.data,project:projectData.error?null:projectData.data};journal.value=j.data||[];decision.value=d.error?null:d.data;connected.value=true}catch(e){connected.value=false;console.warn('Read-only Supabase data unavailable',e)}finally{loading.value=false}}
 const visibleMemories=computed(()=>memoryPlaces.value.filter(m=>memoryFilter.value==='all'||m.subject_type===memoryFilter.value));
 const memoryPosition=(v)=>Math.max(0,Math.min(100,(Number(v)+650)/1300*100))+'%';
@@ -72,7 +50,7 @@ async function submitAuth(){
 function openAuth(mode='signin'){authMode.value=mode;authOpen.value=true;authError.value='';authNotice.value=''}
 async function signInForChat(){if(!client)return;chatError.value='';const email=chatEmail.value.trim();if(!email){chatError.value='Enter your email address.';return}const {error}=await client.auth.signInWithOtp({email,emailRedirectTo:'https://theislandofgeorge.insytesolutionsnz.workers.dev/'});if(error)chatError.value=error.message;else chatNotice.value='Check your email for a sign-in link.'}
 async function signOutChat(){if(client)await client.auth.signOut();chatUser.value=null;chatIsAdmin.value=false;adminDaylight.value=false;authOpen.value=false}
-onMounted(()=>{dispose=mountIsland(canvas.value,({phase:p,daylight:d,weather:w,temperature:t,thermal:th,swimming:s,wetness:wet,weatherSource:source,wind:windSpeed,freshwaterNearby,georgeMoving,resting,sitting})=>{phase.value=p;daylight.value=d;weather.value=w;temperature.value=t;thermal.value=th;swimming.value=s;wetness.value=wet;weatherSource.value=source;wind.value=windSpeed;activity.value={swimming:s,resting,sitting,freshwaterNearby,georgeMoving};if(!client)advanceSurvival({thermal:th,swimming:s,wetness:wet,freshwaterNearby,georgeMoving,resting})},{forceDaylight:()=>chatIsAdmin.value&&adminDaylight.value});loadData();client?.auth.getUser().then(({data})=>{chatUser.value=data?.user||null;checkChatAdmin()});client?.auth.onAuthStateChange((event,session)=>{chatUser.value=session?.user||null;checkChatAdmin();if(event==='PASSWORD_RECOVERY'){authMode.value='update';authOpen.value=true;authNotice.value='Choose a new password.'}});refreshDivineChat();refreshMemoryMap();refresh=setInterval(()=>{loadData();refreshDivineChat();if(tab.value==='memory')refreshMemoryMap()},15000)});
+onMounted(()=>{dispose=mountIsland(canvas.value,({phase:p,daylight:d,weather:w,temperature:t,thermal:th,swimming:s,wetness:wet,weatherSource:source,wind:windSpeed,freshwaterNearby,georgeMoving,resting,sitting})=>{phase.value=p;daylight.value=d;weather.value=w;temperature.value=t;thermal.value=th;swimming.value=s;wetness.value=wet;weatherSource.value=source;wind.value=windSpeed;activity.value={swimming:s,resting,sitting,freshwaterNearby,georgeMoving};},{forceDaylight:()=>chatIsAdmin.value&&adminDaylight.value});loadData();client?.auth.getUser().then(({data})=>{chatUser.value=data?.user||null;checkChatAdmin()});client?.auth.onAuthStateChange((event,session)=>{chatUser.value=session?.user||null;checkChatAdmin();if(event==='PASSWORD_RECOVERY'){authMode.value='update';authOpen.value=true;authNotice.value='Choose a new password.'}});refreshDivineChat();refreshMemoryMap();refresh=setInterval(()=>{loadData();refreshDivineChat();if(tab.value==='memory')refreshMemoryMap()},15000)});
 onUnmounted(()=>{dispose?.();clearInterval(refresh)});
 </script>
 <template>
