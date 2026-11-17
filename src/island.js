@@ -621,10 +621,10 @@ export function mountIsland(element, onTick) {
     else if(goal.includes('investigate'))survivalPose='look';
     else if(!moved)survivalPose='think';
     // Do not infer an eating/drinking animation merely from low needs: wait for an actual action.
-    const desiredAction=moved&&survivalPose!=='sit'&&survivalPose!=='sleep'&&survivalPose!=='saw'&&survivalPose!=='pickup'&&survivalPose!=='build'&&survivalPose!=='putdown'?walkAction:idleAction;
+    const desiredAction=moved&&!sitting?walkAction:idleAction;
     if(desiredAction&&desiredAction!==activeAction){activeAction?.fadeOut(.25);desiredAction.reset().fadeIn(.25).play();activeAction=desiredAction;}
     // Mixer updates first, then the procedural arm/leg/head offsets layer on top.
-    georgeAnimations?.update(dt,elapsed,survivalPose);
+    georgeAnimations?.update(dt,elapsed,moved&&!sitting?'idle':survivalPose);
     if(adventurer){adventurer.position.y=THREE.MathUtils.lerp(adventurer.position.y,(adventurer.userData.baseY??(adventurer.userData.baseY=adventurer.position.y))-(sitting?.55:0),Math.min(1,dt*3));}
     if(moved)george.rotation.y=nextHeading;
     const ground=height(george.position.x,george.position.z);
