@@ -270,6 +270,8 @@ export function mountIsland(element, onTick, visualOptions={}) {
     }
     return {x:nx,z:nz};
   };
+  // Hold an avoidance side briefly instead of choosing left/right anew every frame.
+  const avoidanceState={side:0,until:0,obstacle:null};
   // Steer around obstacle circles before stepping; keep clearance for George's body.
   const avoidObstacleStep=(px,pz,tx,tz,distance)=>{
     const dx=tx-px,dz=tz-pz,goalDist=Math.hypot(dx,dz);
@@ -294,7 +296,11 @@ export function mountIsland(element, onTick, visualOptions={}) {
       const vx=px-nearest.x,vz=pz-nearest.z;
       const cross=ux*vz-uz*vx;
       const preferred=cross>=0?1:-1;
-      for(const sign of [preferred,-preferred]){
+      if(avoidanceState.obstacle!==nearest||performance.now()>avoidanceState.until){
+        avoidanceState.side=preferred;avoidanceState.obstacle=nearest;
+        avoidanceState.until=performance.now()+2200;
+      }
+      for(const sign of [avoidanceState.side,-avoidanceState.side]){
         const waypointX=nearest.x+(-uz*sign)*(nearest.radius+2.4)+ux*(nearest.radius+2.4);
         const waypointZ=nearest.z+(ux*sign)*(nearest.radius+2.4)+uz*(nearest.radius+2.4);
         const length=Math.hypot(waypointX-px,waypointZ-pz);
@@ -918,8 +924,15 @@ export function mountIsland(element, onTick, visualOptions={}) {
         }
       }
     }
+    // Smooth orientation and ignore tiny alternating corrections that cause visual flicker.
+    if(moved){
+      const previous=george.userData.smoothedHeading??george.rotation.y;
+      const turn= Math.atan2(Math.sin(nextHeading-previous),Math.cos(nextHeading-previous));
+      const limited=Math.max(-dt*2.5,Math.min(dt*2.5,turn));
+      george.userData.smoothedHeading=previous+limited;
+    }
     george.userData.wasMoving=moved;
-    george.userData.heading=nextHeading;
+    george.userData.heading=george.userData.smoothedHeading??nextHeading;
     const eventAge=lastSurvivalEvent?Date.now()-new Date(lastSurvivalEvent.created_at).getTime():Infinity;
     const recent=eventAge>=0&&eventAge<9000?lastSurvivalEvent.event_type:null;
     // Pause briefly at an item to visibly bend down and reach before continuing.
@@ -995,7 +1008,7 @@ export function mountIsland(element, onTick, visualOptions={}) {
       const tip=rodGrip.localToWorld(new THREE.Vector3(0,2.65,0));lineGeometry.setFromPoints([tip,bobber.position]);
     }
     for(const model of fishRoot.children){const f=model.userData.fish;if(!f)continue;const p=THREE.MathUtils.clamp((Date.now()-Date.parse(f.updated_at))/60000,0,1);model.position.set(THREE.MathUtils.lerp(Number(f.previous_x),Number(f.x),p),-4.9+Math.sin(elapsed*2+f.id)*.12,THREE.MathUtils.lerp(Number(f.previous_z),Number(f.z),p));model.rotation.y=Math.atan2(Number(f.x)-Number(f.previous_x),Number(f.z)-Number(f.previous_z));}
-    if(moved&&!rummaging&&!isChopping)george.rotation.y=nextHeading;
+    if(moved&&!rummaging&&!isChopping)george.rotation.y=george.userData.smoothedHeading??nextHeading;
     const solidPosition=resolveObstacleOverlap(george.position.x,george.position.z);
     george.position.x=solidPosition.x;george.position.z=solidPosition.z;
     const ground=height(george.position.x,george.position.z);
