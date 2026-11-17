@@ -24,6 +24,7 @@ export function mountIsland(element, onTick) {
   const followTarget=new THREE.Vector3();
   const setFollow=(enabled)=>{
     followGeorge=enabled;
+    movementKeys.clear();
     controls.enablePan=!enabled;
     if(typeof followButton!=='undefined'){
       followButton.textContent=enabled?'🔒':'🔓';
@@ -37,6 +38,37 @@ export function mountIsland(element, onTick) {
   renderer.domElement.addEventListener('pointerdown',onDown);
   window.addEventListener('pointerup',onUp);
   controls.enablePan=false;
+  // Free-camera movement is available only when George tracking is unlocked.
+  const movementKeys=new Set();
+  const movementCodes=new Set(['ShiftLeft','ShiftRight','KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowLeft','ArrowDown','ArrowRight']);
+  const editableTarget=target=>target?.isContentEditable||['INPUT','TEXTAREA','SELECT'].includes(target?.tagName);
+  const onKeyDown=event=>{
+    if(followGeorge||editableTarget(event.target)||event.ctrlKey||event.metaKey||event.altKey)return;
+    if(movementCodes.has(event.code)){movementKeys.add(event.code);event.preventDefault();}
+  };
+  const onKeyUp=event=>{
+    if(movementCodes.has(event.code)){movementKeys.delete(event.code);if(!followGeorge&&!editableTarget(event.target))event.preventDefault();}
+  };
+  const onBlur=()=>movementKeys.clear();
+  window.addEventListener('keydown',onKeyDown);
+  window.addEventListener('keyup',onKeyUp);
+  window.addEventListener('blur',onBlur);
+  const cameraForward=new THREE.Vector3(),cameraRight=new THREE.Vector3(),cameraMove=new THREE.Vector3();
+  const moveUnlockedCamera=dt=>{
+    if(followGeorge||movementKeys.size===0)return;
+    camera.getWorldDirection(cameraForward);cameraForward.y=0;
+    if(cameraForward.lengthSq()<.0001)return;
+    cameraForward.normalize();cameraRight.set(-cameraForward.z,0,cameraForward.x);
+    cameraMove.set(0,0,0);
+    if(movementKeys.has('KeyW')||movementKeys.has('ArrowUp'))cameraMove.add(cameraForward);
+    if(movementKeys.has('KeyS')||movementKeys.has('ArrowDown'))cameraMove.sub(cameraForward);
+    if(movementKeys.has('KeyD')||movementKeys.has('ArrowRight'))cameraMove.add(cameraRight);
+    if(movementKeys.has('KeyA')||movementKeys.has('ArrowLeft'))cameraMove.sub(cameraRight);
+    if(cameraMove.lengthSq()===0)return;
+    const speed=movementKeys.has('ShiftLeft')||movementKeys.has('ShiftRight')?80:28;
+    cameraMove.normalize().multiplyScalar(speed*dt);
+    camera.position.add(cameraMove);controls.target.add(cameraMove);
+  };
   const actions=document.createElement('div');
   actions.className='camera-buttons';
   actions.setAttribute('aria-label','Island camera controls');
@@ -296,7 +328,7 @@ export function mountIsland(element, onTick) {
     return {x,z,limited:false};
   };
   let frame,elapsed=0,last=0,disposed=false;const clock=new THREE.Clock();const resize=()=>{const w=element.clientWidth,h=Math.max(280,element.clientHeight);renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix()};const observer=new ResizeObserver(resize);observer.observe(element);resize();
-  const animate=()=>{if(disposed)return;frame=requestAnimationFrame(animate);const dt=Math.min(clock.getDelta(),.1);elapsed+=dt;adventurerMixer?.update(dt);const cycle=getDayPhase(),angle=cycle*Math.PI*2;
+  const animate=()=>{if(disposed)return;frame=requestAnimationFrame(animate);const dt=Math.min(clock.getDelta(),.1);elapsed+=dt;adventurerMixer?.update(dt);moveUnlockedCamera(dt);const cycle=getDayPhase(),angle=cycle*Math.PI*2;
     // Approximate daylight window 06:00–20:00 NZ local time, with smooth twilight.
     const hour=cycle*24;
     const smooth=(a,b,v)=>{const t=THREE.MathUtils.clamp((v-a)/(b-a),0,1);return t*t*(3-2*t)};
@@ -346,5 +378,5 @@ export function mountIsland(element, onTick) {
     wetness=THREE.MathUtils.clamp(wetness+dt*((weather.rain||swimming)? .018 : -.008),0,1);
     const feelsLike=(weather.feelsLike??(temperature+daylight*(1-weather.cloud)*3))-(wetness*5);
     const thermal=feelsLike<12?'Cold':feelsLike>28?'Hot':'Comfortable';if(followGeorge){followTarget.copy(george.position).add(new THREE.Vector3(0,1.7,0));const delta=followTarget.sub(controls.target).multiplyScalar(1-Math.exp(-dt*3.5));controls.target.add(delta);camera.position.add(delta)}controls.update();constrainCamera();renderer.render(scene,camera);if(elapsed-last>2){last=elapsed;onTick?.({daylight,phase:cycle,georgeX:george.position.x,georgeZ:george.position.z,weather:weatherLabel,temperature:Math.round(temperature),thermal,swimming,wetness:Math.round(wetness*100),weatherSource:weather.source||'Simulated fallback',wind:Math.round(weather.wind||0),freshwaterNearby:freshwaterAt(george.position.x,george.position.z),georgeMoving:moved,atCamp:Math.hypot(george.position.x,george.position.z)<9,resting:resting&&Math.hypot(george.position.x,george.position.z)<9})}};
-  animate();return ()=>{disposed=true;cancelAnimationFrame(frame);observer.disconnect();renderer.domElement.removeEventListener('pointerdown',onDown);window.removeEventListener('pointerup',onUp);actions.remove();controls.dispose();renderer.dispose();renderer.domElement.remove();scene.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material){const mats=Array.isArray(o.material)?o.material:[o.material];mats.forEach(m=>m.dispose())}})};
+  animate();return ()=>{disposed=true;cancelAnimationFrame(frame);observer.disconnect();renderer.domElement.removeEventListener('pointerdown',onDown);window.removeEventListener('pointerup',onUp);window.removeEventListener('keydown',onKeyDown);window.removeEventListener('keyup',onKeyUp);window.removeEventListener('blur',onBlur);actions.remove();controls.dispose();renderer.dispose();renderer.domElement.remove();scene.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material){const mats=Array.isArray(o.material)?o.material:[o.material];mats.forEach(m=>m.dispose())}})};
 }
