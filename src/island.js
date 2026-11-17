@@ -544,6 +544,29 @@ export function mountIsland(element, onTick, visualOptions={}) {
     },undefined,error=>console.warn('Island item model could not load:',file,error));
   }
   const itemUrl=import.meta.env.VITE_SUPABASE_URL,itemKey=import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+  // Rabbits are server-simulated; these meshes only display Supabase snapshots.
+  const rabbitRoot=new THREE.Group();scene.add(rabbitRoot);
+  const rabbitBody=new THREE.SphereGeometry(.75,10,8);
+  const rabbitHead=new THREE.SphereGeometry(.42,10,8);
+  const rabbitEar=new THREE.CapsuleGeometry(.12,.55,3,6);
+  const rabbitFur=new THREE.MeshStandardMaterial({color:0x9a8165,roughness:1});
+  const rabbitEye=new THREE.MeshStandardMaterial({color:0x191713});
+  const renderRabbits=(rows)=>{
+    rabbitRoot.clear();
+    for(const rabbit of rows){
+      const x=Number(rabbit.x),z=Number(rabbit.z),y=height(x,z);
+      const group=new THREE.Group();group.position.set(x,y+.65,z);
+      const body=new THREE.Mesh(rabbitBody,rabbitFur);body.scale.set(1,.7,.65);group.add(body);
+      const head=new THREE.Mesh(rabbitHead,rabbitFur);head.position.set(.65,.25,0);group.add(head);
+      for(const side of [-1,1]){const ear=new THREE.Mesh(rabbitEar,rabbitFur);ear.position.set(.72,.83,side*.2);ear.rotation.z=side*.12;group.add(ear);}
+      const eye=new THREE.Mesh(new THREE.SphereGeometry(.07,6,5),rabbitEye);eye.position.set(.96,.35,.28);group.add(eye);
+      rabbitRoot.add(group);
+    }
+  };
+  let rabbitRefresh;
+  const loadRabbits=()=>{if(!itemUrl||!itemKey)return;fetch(itemUrl+'/rest/v1/island_rabbit_positions?select=id,x,z',{headers:{apikey:itemKey,Authorization:'Bearer '+itemKey}}).then(r=>r.ok?r.json():[]).then(renderRabbits).catch(error=>console.warn('Rabbit refresh unavailable:',error));};
+  loadRabbits();rabbitRefresh=window.setInterval(loadRabbits,15000);
+
   // One persistent reddish clay outcrop, made from a compact cluster of rocks.
   const clayRoot=new THREE.Group();scene.add(clayRoot);
   const clayMat=new THREE.MeshStandardMaterial({color:0xa6533d,roughness:1});
@@ -962,5 +985,5 @@ export function mountIsland(element, onTick, visualOptions={}) {
     wetness=THREE.MathUtils.clamp(wetness+dt*((weather.rain||swimming)? .018 : -.008),0,1);
     if(sv)wetness=Number(sv.wetness)/100;const feelsLike=weather.feelsLike??(temperature+daylight*(1-weather.cloud)*3)-(wetness*5);
     const thermal=feelsLike<12?'Cold':feelsLike>28?'Hot':'Comfortable';if(followGeorge){followTarget.copy(george.position).add(new THREE.Vector3(0,1.7,0));const delta=followTarget.sub(controls.target).multiplyScalar(1-Math.exp(-dt*3.5));controls.target.add(delta);camera.position.add(delta)}controls.update();constrainCamera();controls.update();renderer.render(scene,camera);if(elapsed-last>2){last=elapsed;onTick?.({daylight,phase:cycle,georgeX:george.position.x,georgeZ:george.position.z,weather:weatherLabel,temperature:Math.round(temperature),thermal,swimming,wetness:Math.round(wetness*100),weatherSource:weather.source||'Simulated fallback',wind:Math.round(weather.wind||0),freshwaterNearby:freshwaterAt(george.position.x,george.position.z),georgeMoving:moved,sitting,atCamp:Math.hypot(george.position.x,george.position.z)<9,resting:resting&&Math.hypot(george.position.x,george.position.z)<9})}};
-  animate();return ()=>{disposed=true;itemsDisposed=true;if(fishRefresh!==null)clearInterval(fishRefresh);if(itemRefresh!==null)clearInterval(itemRefresh);if(cutTreeRefresh!==null)clearInterval(cutTreeRefresh);if(regrowthRefresh!==null)clearInterval(regrowthRefresh);if(carriedLogRefresh!==null)clearInterval(carriedLogRefresh);if(eventRefresh!==null)clearInterval(eventRefresh);if(sharedRefresh!==null)clearInterval(sharedRefresh);if(crateEventRefresh!==null)clearInterval(crateEventRefresh);if(cratePositionRefresh!==null)clearInterval(cratePositionRefresh);cancelAnimationFrame(frame);observer.disconnect();renderer.domElement.removeEventListener('pointerdown',onDown);window.removeEventListener('pointerup',onUp);window.removeEventListener('keydown',onKeyDown);window.removeEventListener('keyup',onKeyUp);window.removeEventListener('blur',onBlur);actions.remove();controls.dispose();renderer.dispose();renderer.domElement.remove();scene.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material){const mats=Array.isArray(o.material)?o.material:[o.material];mats.forEach(m=>m.dispose())}})};
+  animate();return ()=>{disposed=true;itemsDisposed=true;if(fishRefresh!==null)clearInterval(rabbitRefresh);clearInterval(fishRefresh);if(itemRefresh!==null)clearInterval(itemRefresh);if(cutTreeRefresh!==null)clearInterval(cutTreeRefresh);if(regrowthRefresh!==null)clearInterval(regrowthRefresh);if(carriedLogRefresh!==null)clearInterval(carriedLogRefresh);if(eventRefresh!==null)clearInterval(eventRefresh);if(sharedRefresh!==null)clearInterval(sharedRefresh);if(crateEventRefresh!==null)clearInterval(crateEventRefresh);if(cratePositionRefresh!==null)clearInterval(cratePositionRefresh);cancelAnimationFrame(frame);observer.disconnect();renderer.domElement.removeEventListener('pointerdown',onDown);window.removeEventListener('pointerup',onUp);window.removeEventListener('keydown',onKeyDown);window.removeEventListener('keyup',onKeyUp);window.removeEventListener('blur',onBlur);actions.remove();controls.dispose();renderer.dispose();renderer.domElement.remove();scene.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material){const mats=Array.isArray(o.material)?o.material:[o.material];mats.forEach(m=>m.dispose())}})};
 }
