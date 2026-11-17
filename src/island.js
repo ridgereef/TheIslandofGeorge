@@ -74,7 +74,7 @@ export function mountIsland(element, onTick) {
   actions.setAttribute('aria-label','Island camera controls');
   const addButton=(label,title,fn)=>{
     const b=document.createElement('button');b.type='button';b.textContent=label;b.title=title;b.setAttribute('aria-label',title);
-    b.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();fn();controls.update();constrainCamera()});
+    b.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();fn();controls.update();constrainCamera();controls.update()});
     actions.appendChild(b);
   };
   const orbit=(dx,dy=0)=>{
@@ -131,6 +131,13 @@ export function mountIsland(element, onTick) {
     const distance=cameraRay.length();
     if(distance<.001)return;
     cameraRay.divideScalar(distance);
+    // When exploring freely, don't collapse the camera toward the orbit target because of hills.
+    // Only the locked follow view needs a clear line of sight to George.
+    if(!followGeorge){
+      const floor=Math.max(-5,height(camera.position.x,camera.position.z))+CAMERA_CLEARANCE;
+      if(camera.position.y<floor)camera.position.y=floor;
+      return;
+    }
     // Find the first obstruction along the sight line, so hills cannot sit between George and the camera.
     const samples=Math.min(320,Math.max(16,Math.ceil(distance/4)));
     let safeDistance=distance;
@@ -146,7 +153,6 @@ export function mountIsland(element, onTick) {
     if(safeDistance<distance)camera.position.copy(target).addScaledVector(cameraRay,safeDistance);
     const surface=Math.max(-5,height(camera.position.x,camera.position.z));
     if(camera.position.y<surface+CAMERA_CLEARANCE)camera.position.y=surface+CAMERA_CLEARANCE;
-    camera.lookAt(target);
   };
   const water=mesh(new THREE.PlaneGeometry(6500,6500),0x238aab,0,-5,0,false);water.rotation.x=-Math.PI/2;
   const geo=new THREE.PlaneGeometry(1600,1600,180,180);geo.rotateX(-Math.PI/2);
@@ -428,6 +434,6 @@ export function mountIsland(element, onTick) {
     george.position.y=(swimming?-2.3:ground)+Math.sin(elapsed*(swimming?3:7))*(swimming?.22:.035);
     wetness=THREE.MathUtils.clamp(wetness+dt*((weather.rain||swimming)? .018 : -.008),0,1);
     const feelsLike=(weather.feelsLike??(temperature+daylight*(1-weather.cloud)*3))-(wetness*5);
-    const thermal=feelsLike<12?'Cold':feelsLike>28?'Hot':'Comfortable';if(followGeorge){followTarget.copy(george.position).add(new THREE.Vector3(0,1.7,0));const delta=followTarget.sub(controls.target).multiplyScalar(1-Math.exp(-dt*3.5));controls.target.add(delta);camera.position.add(delta)}controls.update();constrainCamera();renderer.render(scene,camera);if(elapsed-last>2){last=elapsed;onTick?.({daylight,phase:cycle,georgeX:george.position.x,georgeZ:george.position.z,weather:weatherLabel,temperature:Math.round(temperature),thermal,swimming,wetness:Math.round(wetness*100),weatherSource:weather.source||'Simulated fallback',wind:Math.round(weather.wind||0),freshwaterNearby:freshwaterAt(george.position.x,george.position.z),georgeMoving:moved,atCamp:Math.hypot(george.position.x,george.position.z)<9,resting:resting&&Math.hypot(george.position.x,george.position.z)<9})}};
+    const thermal=feelsLike<12?'Cold':feelsLike>28?'Hot':'Comfortable';if(followGeorge){followTarget.copy(george.position).add(new THREE.Vector3(0,1.7,0));const delta=followTarget.sub(controls.target).multiplyScalar(1-Math.exp(-dt*3.5));controls.target.add(delta);camera.position.add(delta)}controls.update();constrainCamera();controls.update();renderer.render(scene,camera);if(elapsed-last>2){last=elapsed;onTick?.({daylight,phase:cycle,georgeX:george.position.x,georgeZ:george.position.z,weather:weatherLabel,temperature:Math.round(temperature),thermal,swimming,wetness:Math.round(wetness*100),weatherSource:weather.source||'Simulated fallback',wind:Math.round(weather.wind||0),freshwaterNearby:freshwaterAt(george.position.x,george.position.z),georgeMoving:moved,atCamp:Math.hypot(george.position.x,george.position.z)<9,resting:resting&&Math.hypot(george.position.x,george.position.z)<9})}};
   animate();return ()=>{disposed=true;itemsDisposed=true;cancelAnimationFrame(frame);observer.disconnect();renderer.domElement.removeEventListener('pointerdown',onDown);window.removeEventListener('pointerup',onUp);window.removeEventListener('keydown',onKeyDown);window.removeEventListener('keyup',onKeyUp);window.removeEventListener('blur',onBlur);actions.remove();controls.dispose();renderer.dispose();renderer.domElement.remove();scene.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material){const mats=Array.isArray(o.material)?o.material:[o.material];mats.forEach(m=>m.dispose())}})};
 }
