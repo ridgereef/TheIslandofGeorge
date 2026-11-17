@@ -387,6 +387,30 @@ export function mountIsland(element, onTick) {
     if(r>maxR){const scale=maxR/r;return {x:x*scale,z:z*scale,limited:true}}
     return {x,z,limited:false};
   };
+  // Walking is limited to thirty real-world minutes, followed by a seated five-minute break.
+  // Persist the cycle locally so refreshing the page does not reset George's fatigue.
+  const WALK_LIMIT_MS=30*60*1000, SIT_BREAK_MS=5*60*1000;
+  const walkCycleKey='george-walk-rest-cycle-v1';
+  let walkCycle={walkedMs:0,sittingUntil:0,lastAt:Date.now()};
+  try{
+    const stored=JSON.parse(localStorage.getItem(walkCycleKey)||'null');
+    if(stored&&Number.isFinite(stored.walkedMs)&&Number.isFinite(stored.sittingUntil)&&Number.isFinite(stored.lastAt))
+      walkCycle={walkedMs:Math.max(0,Math.min(WALK_LIMIT_MS,stored.walkedMs)),sittingUntil:stored.sittingUntil,lastAt:stored.lastAt};
+  }catch{}
+  let lastCycleSave=0;
+  const updateWalkCycle=(moving)=>{
+    const now=Date.now(),delta=Math.max(0,Math.min(5000,now-walkCycle.lastAt));
+    walkCycle.lastAt=now;
+    if(walkCycle.sittingUntil&&now>=walkCycle.sittingUntil){
+      walkCycle.sittingUntil=0;walkCycle.walkedMs=0;
+    }
+    if(!walkCycle.sittingUntil&&moving){
+      walkCycle.walkedMs=Math.min(WALK_LIMIT_MS,walkCycle.walkedMs+delta);
+      if(walkCycle.walkedMs>=WALK_LIMIT_MS)walkCycle.sittingUntil=now+SIT_BREAK_MS;
+    }
+    if(now-lastCycleSave>10000){lastCycleSave=now;try{localStorage.setItem(walkCycleKey,JSON.stringify(walkCycle))}catch{}}
+    return walkCycle.sittingUntil>now;
+  };
   let frame,elapsed=0,last=0,disposed=false;const clock=new THREE.Clock();const resize=()=>{const w=element.clientWidth,h=Math.max(280,element.clientHeight);renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix()};const observer=new ResizeObserver(resize);observer.observe(element);resize();
   const animate=()=>{if(disposed)return;frame=requestAnimationFrame(animate);const dt=Math.min(clock.getDelta(),.1);elapsed+=dt;adventurerMixer?.update(dt);moveUnlockedCamera(dt);const cycle=getDayPhase(),angle=cycle*Math.PI*2;
     // Approximate daylight window 06:00–20:00 NZ local time, with smooth twilight.
@@ -406,6 +430,7 @@ export function mountIsland(element, onTick) {
     const seekWater=george.userData.seekWater===true;
     const resting=typeof window!=='undefined'&&window.__georgeNeedsRest===true;
     const destination=resting?safePosition(1,1):seekWater?safePosition(-455,100):safePosition(Math.sin(routeAngle)*routeRadius,Math.cos(routeAngle)*routeRadius);
+    const sitting=updateWalkCycle(george.userData.wasMoving===true);
     const dx=destination.x-george.position.x,dz=destination.z-george.position.z;
     const desired=Math.atan2(dx,dz),speed=3.1*dt;
     const currentHeading=george.userData.heading??desired;
@@ -421,7 +446,7 @@ export function mountIsland(element, onTick) {
       }
       return true;
     };
-    if(Math.hypot(dx,dz)>.5){
+    if(!sitting&&Math.hypot(dx,dz)>.5){
       for(const offset of offsets){
         const heading=desired+offset;
         if(!sweepClear(heading))continue;
@@ -430,13 +455,17 @@ export function mountIsland(element, onTick) {
         nextHeading=heading;moved=true;break;
       }
     }
+    george.userData.wasMoving=moved;
     george.userData.heading=nextHeading;
+    const desiredAction=moved?walkAction:idleAction;
+    if(desiredAction&&desiredAction!==activeAction){activeAction?.fadeOut(.25);desiredAction.reset().fadeIn(.25).play();activeAction=desiredAction;}
+    if(adventurer){adventurer.position.y=THREE.MathUtils.lerp(adventurer.position.y,(adventurer.userData.baseY??(adventurer.userData.baseY=adventurer.position.y))-(sitting?.55:0),Math.min(1,dt*3));}
     if(moved)george.rotation.y=nextHeading;
     const ground=height(george.position.x,george.position.z);
     const swimming=ground< -1;
     george.position.y=(swimming?-2.3:ground)+Math.sin(elapsed*(swimming?3:7))*(swimming?.22:.035);
     wetness=THREE.MathUtils.clamp(wetness+dt*((weather.rain||swimming)? .018 : -.008),0,1);
     const feelsLike=(weather.feelsLike??(temperature+daylight*(1-weather.cloud)*3))-(wetness*5);
-    const thermal=feelsLike<12?'Cold':feelsLike>28?'Hot':'Comfortable';if(followGeorge){followTarget.copy(george.position).add(new THREE.Vector3(0,1.7,0));const delta=followTarget.sub(controls.target).multiplyScalar(1-Math.exp(-dt*3.5));controls.target.add(delta);camera.position.add(delta)}controls.update();constrainCamera();controls.update();renderer.render(scene,camera);if(elapsed-last>2){last=elapsed;onTick?.({daylight,phase:cycle,georgeX:george.position.x,georgeZ:george.position.z,weather:weatherLabel,temperature:Math.round(temperature),thermal,swimming,wetness:Math.round(wetness*100),weatherSource:weather.source||'Simulated fallback',wind:Math.round(weather.wind||0),freshwaterNearby:freshwaterAt(george.position.x,george.position.z),georgeMoving:moved,atCamp:Math.hypot(george.position.x,george.position.z)<9,resting:resting&&Math.hypot(george.position.x,george.position.z)<9})}};
+    const thermal=feelsLike<12?'Cold':feelsLike>28?'Hot':'Comfortable';if(followGeorge){followTarget.copy(george.position).add(new THREE.Vector3(0,1.7,0));const delta=followTarget.sub(controls.target).multiplyScalar(1-Math.exp(-dt*3.5));controls.target.add(delta);camera.position.add(delta)}controls.update();constrainCamera();controls.update();renderer.render(scene,camera);if(elapsed-last>2){last=elapsed;onTick?.({daylight,phase:cycle,georgeX:george.position.x,georgeZ:george.position.z,weather:weatherLabel,temperature:Math.round(temperature),thermal,swimming,wetness:Math.round(wetness*100),weatherSource:weather.source||'Simulated fallback',wind:Math.round(weather.wind||0),freshwaterNearby:freshwaterAt(george.position.x,george.position.z),georgeMoving:moved,sitting,walkMinutesRemaining:Math.max(0,Math.ceil((WALK_LIMIT_MS-walkCycle.walkedMs)/60000)),atCamp:Math.hypot(george.position.x,george.position.z)<9,resting:resting&&Math.hypot(george.position.x,george.position.z)<9})}};
   animate();return ()=>{disposed=true;itemsDisposed=true;if(itemRefresh!==null)clearInterval(itemRefresh);cancelAnimationFrame(frame);observer.disconnect();renderer.domElement.removeEventListener('pointerdown',onDown);window.removeEventListener('pointerup',onUp);window.removeEventListener('keydown',onKeyDown);window.removeEventListener('keyup',onKeyUp);window.removeEventListener('blur',onBlur);actions.remove();controls.dispose();renderer.dispose();renderer.domElement.remove();scene.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material){const mats=Array.isArray(o.material)?o.material:[o.material];mats.forEach(m=>m.dispose())}})};
 }
