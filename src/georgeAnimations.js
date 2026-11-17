@@ -6,6 +6,7 @@ export function createGeorgeAnimationController(root) {
   const bones = new Map();
   root.traverse(node => { if (node.isBone) bones.set(node.name, node); });
   const neutral = new THREE.Quaternion();
+  const bindRotations = new Map([...bones].map(([name,bone])=>[name,bone.quaternion.clone()]));
   const euler = new THREE.Euler();
   const rotation = new THREE.Quaternion();
   let weight = 0;
@@ -16,7 +17,10 @@ export function createGeorgeAnimationController(root) {
     if (!bone || amount <= 0) return;
     euler.set(x,y,z,'XYZ');
     rotation.setFromEuler(euler);
-    neutral.copy(bone.quaternion).multiply(rotation);
+    // Absolute offsets from the rig's neutral pose: never accumulate rotations frame-to-frame.
+    const base=bindRotations.get(name);
+    if(!base)return;
+    neutral.copy(base).multiply(rotation);
     bone.quaternion.slerp(neutral,Math.min(1,amount));
   }
   return {
@@ -31,9 +35,9 @@ export function createGeorgeAnimationController(root) {
       const pulse=Math.sin(t*5),slow=Math.sin(t*1.3);
       switch(current) {
         case 'sit':
-          offset('Hips',-.16,0,0);
-          offset('UpperLeg.L',-1.2,0,.10);offset('UpperLeg.R',-1.2,0,-.10);
-          offset('LowerLeg.L',1.3);offset('LowerLeg.R',1.3);
+          offset('Hips',-.08,0,0);
+          offset('UpperLeg.L',-.85,0,.06);offset('UpperLeg.R',-.85,0,-.06);
+          offset('LowerLeg.L',1.05);offset('LowerLeg.R',1.05);
           offset('UpperArm.L',.3+.06*Math.sin(t*.8),0,-.25);offset('UpperArm.R',.3+.06*Math.sin(t*.7),0,.25);
           offset('Head',.05*Math.sin(t*.65),.13*Math.sin(t*.45));
           break;
