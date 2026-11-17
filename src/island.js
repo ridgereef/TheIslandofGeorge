@@ -735,6 +735,7 @@ export function mountIsland(element, onTick) {
     hemi.intensity=(.4+daylight*1.7)*(1-weather.cloud*.32);
     sun.intensity=daylight*2.5*(1-weather.cloud*.7);
     // George's actions come exclusively from the shared simulation. The browser is a viewer.
+    const crateActive=!!crateInteraction&&performance.now()-crateInteraction.startedAt<7500;
     const resting=sharedGeorge?.inventory?.current_goal==='rest';
     const sitting=sharedGeorge?.inventory?.activity==='sitting'||resting;
     let moved=false,nextHeading=george.userData.heading??0;
@@ -749,7 +750,7 @@ export function mountIsland(element, onTick) {
           george.position.x=x;george.position.z=z;george.position.y=height(x,z);
           george.userData.hasSynced=true;
           if(!initialCameraSynced){setDefaultGeorgeCamera();initialCameraSynced=true;}
-        }else if(delta>.04&&!(crateInteraction&&performance.now()-crateInteraction.startedAt<7500)){
+        }else if(delta>.04&&!crateActive){
           // Catch up smoothly, bounded by a believable travel speed.
           // Avoid per-frame fixed distance increments (which cause FPS-dependent movement).
           const speed=THREE.MathUtils.clamp(delta*.22,1.7,4.2);
@@ -783,14 +784,27 @@ export function mountIsland(element, onTick) {
     const eventAge=lastSurvivalEvent?Date.now()-new Date(lastSurvivalEvent.created_at).getTime():Infinity;
     const recent=eventAge>=0&&eventAge<9000?lastSurvivalEvent.event_type:null;
     // Pause briefly at an item to visibly bend down and reach before continuing.
-    const rummaging=!!crateInteraction&&performance.now()-crateInteraction.startedAt<7500;
+    const rummaging=crateActive;
     if(crateInteraction&&!rummaging)crateInteraction=null;
     const pickingUp=!rummaging&&(recent==='collected_item'||recent==='swapped_item')&&eventAge<2400;
     if(rummaging&&crateWorldPosition){
       const cx=Number(crateWorldPosition.x),cz=Number(crateWorldPosition.z);
       const distanceToCrate=Math.hypot(cx-george.position.x,cz-george.position.z);
       if(Number.isFinite(distanceToCrate)&&distanceToCrate<18&&distanceToCrate>.05){
-        // Character forward is +Z; face the crate while reaching inside.
+        // Approach to within one foot of the crate's edge, without intersecting it.
+        // Medium crate collision radius is approximately 0.7 m.
+        const stoppingDistance=1.005;
+        if(distanceToCrate>stoppingDistance+.03){
+          const step=Math.min(distanceToCrate-stoppingDistance,dt*1.35);
+          const candidate=avoidObstacleStep(george.position.x,george.position.z,cx,cz,step);
+          // The crate itself may be a collision obstacle: stop short rather than walk through it.
+          if(Math.hypot(candidate.x-cx,candidate.z-cz)>=stoppingDistance-.02){
+            george.position.x=candidate.x;george.position.z=candidate.z;
+          }
+        }else if(distanceToCrate<stoppingDistance-.05){
+          const ux=(george.position.x-cx)/distanceToCrate,uz=(george.position.z-cz)/distanceToCrate;
+          george.position.x=cx+ux*stoppingDistance;george.position.z=cz+uz*stoppingDistance;
+        }
         nextHeading=Math.atan2(cx-george.position.x,cz-george.position.z);
         george.rotation.y=nextHeading;
       }
