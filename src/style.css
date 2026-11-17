@@ -73,3 +73,8 @@ footer{color:#647a80}
 .admin-daylight-toggle{display:inline-flex;align-items:center;gap:7px;border:1px solid #b8d2ca;border-radius:20px;padding:7px 10px;background:#fff;color:#24694f;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;margin-right:8px}
 .admin-daylight-toggle input{accent-color:#237a59;width:15px;height:15px;margin:0;cursor:pointer}
 @media(max-width:650px){.admin-daylight-toggle{margin-right:3px;padding:6px 8px}}
+
+/* Keep admin lighting control visible over the 3D island on all screen sizes. */
+.scene-panel{position:relative}
+.scene-daylight-toggle{position:absolute;z-index:35;top:50px;left:12px;pointer-events:auto;box-shadow:0 2px 12px #0005;background:#fff}
+@media(max-width:650px){.scene-daylight-toggle{top:46px;left:8px}}
