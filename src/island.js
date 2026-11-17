@@ -560,8 +560,8 @@ export function mountIsland(element, onTick) {
     hemi.intensity=(.4+daylight*1.7)*(1-weather.cloud*.32);
     sun.intensity=daylight*2.5*(1-weather.cloud*.7);
     // George's actions come exclusively from the shared simulation. The browser is a viewer.
-    const sitting=sharedGeorge?.inventory?.activity==='sitting';
     const resting=sharedGeorge?.inventory?.current_goal==='rest';
+    const sitting=sharedGeorge?.inventory?.activity==='sitting'||resting;
     let moved=false,nextHeading=george.userData.heading??0;
     if(sharedGeorge?.position){
       const x=Number(sharedGeorge.position.x),z=Number(sharedGeorge.position.z);
@@ -596,10 +596,12 @@ export function mountIsland(element, onTick) {
     else if(goal.includes('eat')||goal.includes('food'))survivalPose='eat';
     else if(goal.includes('build')||goal.includes('shelter'))survivalPose='build';
     else if(goal.includes('saw')||goal.includes('cut'))survivalPose='saw';
-    else if(goal.includes('investigate')||(!moved&&goal==='explore'))survivalPose='look';
+    else if(goal.includes('investigate'))survivalPose='look';
+    else if(!moved)survivalPose='think';
     // Do not infer an eating/drinking animation merely from low needs: wait for an actual action.
     const desiredAction=moved&&survivalPose!=='sit'&&survivalPose!=='sleep'&&survivalPose!=='saw'&&survivalPose!=='pickup'&&survivalPose!=='build'&&survivalPose!=='putdown'?walkAction:idleAction;
     if(desiredAction&&desiredAction!==activeAction){activeAction?.fadeOut(.25);desiredAction.reset().fadeIn(.25).play();activeAction=desiredAction;}
+    // Mixer updates first, then the procedural arm/leg/head offsets layer on top.
     georgeAnimations?.update(dt,elapsed,survivalPose);
     if(adventurer){adventurer.position.y=THREE.MathUtils.lerp(adventurer.position.y,(adventurer.userData.baseY??(adventurer.userData.baseY=adventurer.position.y))-(sitting?.55:0),Math.min(1,dt*3));}
     if(moved)george.rotation.y=nextHeading;
