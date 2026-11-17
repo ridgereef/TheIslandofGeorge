@@ -18,7 +18,7 @@ export function createGeorgeAnimationController(root) {
   const neckEuler = new THREE.Euler(0,0,0,'YXZ');
   let weight = 0;
   let current = 'idle';
-  const clipActions = new Set(['walk','sit','saw','pickup','putdown','carry','build','drink','eat','sleep','look','think']);
+  const clipActions = new Set(['walk','sit','saw','pickup','putdown','rummage','carry','build','drink','eat','sleep','look','think']);
   function offset(name, x=0, y=0, z=0, amount=weight) {
     const bone = bones.get(name);
     if (!bone || amount <= 0) return;
