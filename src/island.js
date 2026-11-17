@@ -102,6 +102,36 @@ export function mountIsland(element, onTick) {
   for(let i=0;i<pos.count;i++){const x=pos.getX(i),z=pos.getZ(i),h=height(x,z);pos.setY(i,h);const color=h<8?sandColor:h>170?rockColor:h>70?forestColor:grassColor;colors.push(color.r,color.g,color.b);}
   geo.setAttribute('color',new THREE.Float32BufferAttribute(colors,3));geo.computeVertexNormals();
   const land=new THREE.Mesh(geo,new THREE.MeshStandardMaterial({vertexColors:true,roughness:1,side:THREE.DoubleSide}));land.receiveShadow=true;scene.add(land);
+  // Freshwater stream from the mountain at (-235,150) down to the western shore.
+  const riverPoints=[];
+  for(let i=0;i<=100;i++){
+    const t=i/100;
+    const x=-235-475*t,z=150*(1-t)+18*Math.sin(t*Math.PI*3)*Math.sin(t*Math.PI);
+    riverPoints.push(new THREE.Vector3(x,Math.max(-4.85,height(x,z))+.5,z));
+  }
+  const riverVertices=[],riverIndices=[];
+  for(let i=0;i<riverPoints.length;i++){
+    const p=riverPoints[i],before=riverPoints[Math.max(0,i-1)],after=riverPoints[Math.min(riverPoints.length-1,i+1)];
+    const dx=after.x-before.x,dz=after.z-before.z,len=Math.hypot(dx,dz)||1;
+    const width=2.2+2.5*i/(riverPoints.length-1);
+    riverVertices.push(p.x-dz/len*width,p.y,p.z+dx/len*width,p.x+dz/len*width,p.y,p.z-dx/len*width);
+    if(i>0){const a=2*(i-1),b=2*i;riverIndices.push(a,a+1,b,a+1,b+1,b);}
+  }
+  const riverGeometry=new THREE.BufferGeometry();
+  riverGeometry.setAttribute('position',new THREE.Float32BufferAttribute(riverVertices,3));
+  riverGeometry.setIndex(riverIndices);riverGeometry.computeVertexNormals();
+  const riverMesh=new THREE.Mesh(riverGeometry,new THREE.MeshStandardMaterial({color:0x42b9d9,transparent:true,opacity:.88,side:THREE.DoubleSide,roughness:.28,depthWrite:false}));
+  riverMesh.renderOrder=2;scene.add(riverMesh);
+  const riverDistance=(x,z)=>{
+    let best=Infinity;
+    for(let i=0;i<riverPoints.length-1;i++){
+      const a=riverPoints[i],b=riverPoints[i+1],vx=b.x-a.x,vz=b.z-a.z;
+      const t=THREE.MathUtils.clamp(((x-a.x)*vx+(z-a.z)*vz)/(vx*vx+vz*vz),0,1);
+      best=Math.min(best,Math.hypot(x-a.x-vx*t,z-a.z-vz*t));
+    }
+    return best;
+  };
+  const freshwaterAt=(x,z)=>riverDistance(x,z)<5&&height(x,z)>-1;
   // Instancing keeps thousands of trees efficient to render on mobile devices.
   const trunkGeo=new THREE.CylinderGeometry(.9,1.4,10,5),leafGeo=new THREE.ConeGeometry(6,24,6);
   const trunkMat=new THREE.MeshStandardMaterial({color:'#674b32'}),leafMat=new THREE.MeshStandardMaterial({color:'#326b3c'});
@@ -239,9 +269,11 @@ export function mountIsland(element, onTick) {
     hemi.intensity=(.4+daylight*1.7)*(1-weather.cloud*.32);
     sun.intensity=daylight*2.5*(1-weather.cloud*.7);
     // Move continuously, steering around collision footprints instead of teleporting through them.
+    george.userData.seekWater=typeof window!=='undefined'&&window.__georgeNeedsWater===true;
     const routeAngle=elapsed*.004;
     const routeRadius=620+95*Math.sin(elapsed*.012);
-    const destination=safePosition(Math.sin(routeAngle)*routeRadius,Math.cos(routeAngle)*routeRadius);
+    const seekWater=george.userData.seekWater===true;
+    const destination=seekWater?safePosition(-455,100):safePosition(Math.sin(routeAngle)*routeRadius,Math.cos(routeAngle)*routeRadius);
     const dx=destination.x-george.position.x,dz=destination.z-george.position.z;
     const desired=Math.atan2(dx,dz),speed=3.1*dt;
     const currentHeading=george.userData.heading??desired;
@@ -273,6 +305,6 @@ export function mountIsland(element, onTick) {
     george.position.y=(swimming?-2.3:ground)+Math.sin(elapsed*(swimming?3:7))*(swimming?.22:.035);
     wetness=THREE.MathUtils.clamp(wetness+dt*((weather.rain||swimming)? .018 : -.008),0,1);
     const feelsLike=(weather.feelsLike??(temperature+daylight*(1-weather.cloud)*3))-(wetness*5);
-    const thermal=feelsLike<12?'Cold':feelsLike>28?'Hot':'Comfortable';if(followGeorge){followTarget.copy(george.position).add(new THREE.Vector3(0,1.7,0));const delta=followTarget.sub(controls.target).multiplyScalar(1-Math.exp(-dt*3.5));controls.target.add(delta);camera.position.add(delta)}controls.update();constrainCamera();renderer.render(scene,camera);if(elapsed-last>2){last=elapsed;onTick?.({daylight,phase:cycle,georgeX:george.position.x,georgeZ:george.position.z,weather:weatherLabel,temperature:Math.round(temperature),thermal,swimming,wetness:Math.round(wetness*100),weatherSource:weather.source||'Simulated fallback',wind:Math.round(weather.wind||0)})}};
+    const thermal=feelsLike<12?'Cold':feelsLike>28?'Hot':'Comfortable';if(followGeorge){followTarget.copy(george.position).add(new THREE.Vector3(0,1.7,0));const delta=followTarget.sub(controls.target).multiplyScalar(1-Math.exp(-dt*3.5));controls.target.add(delta);camera.position.add(delta)}controls.update();constrainCamera();renderer.render(scene,camera);if(elapsed-last>2){last=elapsed;onTick?.({daylight,phase:cycle,georgeX:george.position.x,georgeZ:george.position.z,weather:weatherLabel,temperature:Math.round(temperature),thermal,swimming,wetness:Math.round(wetness*100),weatherSource:weather.source||'Simulated fallback',wind:Math.round(weather.wind||0),freshwaterNearby:freshwaterAt(george.position.x,george.position.z),georgeMoving:moved})}};
   animate();return ()=>{disposed=true;cancelAnimationFrame(frame);observer.disconnect();renderer.domElement.removeEventListener('pointerdown',onDown);renderer.domElement.removeEventListener('wheel',onWheel);renderer.domElement.removeEventListener('touchstart',onTouch);window.removeEventListener('pointerup',onUp);actions.remove();controls.dispose();renderer.dispose();renderer.domElement.remove();scene.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material){const mats=Array.isArray(o.material)?o.material:[o.material];mats.forEach(m=>m.dispose())}})};
 }
