@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { createGeorgeAnimationController } from './georgeAnimations.js';
 export function mountIsland(element, onTick) {
   const scene=new THREE.Scene(); scene.background=new THREE.Color('#87bed0'); scene.fog=new THREE.Fog('#87bed0',1100,3200);
   const camera=new THREE.PerspectiveCamera(58,1,.1,5000); camera.position.set(15,12,22); camera.lookAt(0,3,0);
@@ -374,7 +375,7 @@ export function mountIsland(element, onTick) {
     },undefined,error=>console.warn('Island item model could not load:',file,error));
   }
   const itemUrl=import.meta.env.VITE_SUPABASE_URL,itemKey=import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-  let itemRefresh=null,cutTreeRefresh=null;
+  let itemRefresh=null,cutTreeRefresh=null,georgeHasLog=false;
   if(itemUrl&&itemKey){
     const refreshIslandItems=()=>fetch(itemUrl+'/rest/v1/island_items?select=id,type_id,position,state&state=in.(ground,placed)',{
       headers:{apikey:itemKey,Authorization:'Bearer '+itemKey}
@@ -386,6 +387,13 @@ export function mountIsland(element, onTick) {
     }).then(r=>{if(!r.ok)throw Error('Cut-tree query '+r.status);return r.json()})
       .then(events=>{if(!itemsDisposed&&Array.isArray(events))markCutTrees(events)})
       .catch(error=>console.warn('Cut-tree locations unavailable:',error));
+    const refreshCarriedLog=()=>fetch(itemUrl+'/rest/v1/island_items?select=id&type_id=eq.log&owner=eq.george&state=eq.inventory&limit=1',{
+      headers:{apikey:itemKey,Authorization:'Bearer '+itemKey}
+    }).then(r=>r.ok?r.json():Promise.reject(Error('Carried log query '+r.status)))
+      .then(items=>{if(!itemsDisposed)georgeHasLog=items.length>0})
+      .catch(error=>console.warn('Carried log status unavailable:',error));
+    refreshCarriedLog();
+    window.setInterval(refreshCarriedLog,5000);
     refreshCutTrees();
     cutTreeRefresh=window.setInterval(refreshCutTrees,30000);
     refreshIslandItems();
@@ -397,7 +405,7 @@ export function mountIsland(element, onTick) {
   george.position.set(0,groundY,0);scene.add(george);
   // Load the user's original Adventurer GLB once it is present in public/models.
   // Keep the placeholder only as a fallback when the asset cannot be loaded.
-  let adventurer=null,adventurerMixer=null,walkAction=null,idleAction=null,activeAction=null;
+  let adventurer=null,adventurerMixer=null,walkAction=null,idleAction=null,activeAction=null,georgeAnimations=null;
   const loader=new GLTFLoader();
   loader.load('/models/Adventurer.glb',gltf=>{
     if(disposed)return;
@@ -412,6 +420,7 @@ export function mountIsland(element, onTick) {
     george.children.forEach(child=>{if(child!==adventurer)child.visible=false});
     adventurer.traverse(obj=>{if(obj.isMesh){obj.castShadow=true;obj.receiveShadow=true}});
     adventurerMixer=new THREE.AnimationMixer(adventurer);
+    georgeAnimations=createGeorgeAnimationController(adventurer);
     const findClip=name=>gltf.animations.find(a=>a.name.toLowerCase()===name.toLowerCase());
     const walk=findClip('Walk'),idle=findClip('Idle');
     if(walk)walkAction=adventurerMixer.clipAction(walk);
@@ -483,13 +492,21 @@ export function mountIsland(element, onTick) {
   // The shared Supabase simulation owns George's activity and position.
   // No local fatigue timer: every visitor observes the same George.
   let sharedGeorge=null;
+  let lastSurvivalEvent=null;
   let sharedRefresh=null;
   if(itemUrl&&itemKey){
-    const loadSharedGeorge=()=>fetch(itemUrl+'/rest/v1/world_state?select=position,inventory&id=eq.1',{
+    const loadSharedGeorge=()=>fetch(itemUrl+'/rest/v1/world_state?select=position,inventory,needs&id=eq.1',{
       headers:{apikey:itemKey,Authorization:'Bearer '+itemKey}
     }).then(r=>r.ok?r.json():Promise.reject(Error('World sync '+r.status)))
       .then(rows=>{if(!disposed&&rows?.[0])sharedGeorge=rows[0]})
       .catch(error=>console.warn('Shared George unavailable:',error));
+    const loadRecentEvent=()=>fetch(itemUrl+'/rest/v1/island_item_events?select=event_type,created_at,details&order=created_at.desc&limit=1',{
+      headers:{apikey:itemKey,Authorization:'Bearer '+itemKey}
+    }).then(r=>r.ok?r.json():Promise.reject(Error('Action event query '+r.status)))
+      .then(rows=>{if(!disposed)lastSurvivalEvent=rows?.[0]||null})
+      .catch(error=>console.warn('Survival event unavailable:',error));
+    loadRecentEvent();
+    window.setInterval(loadRecentEvent,5000);
     loadSharedGeorge();
     sharedRefresh=window.setInterval(loadSharedGeorge,5000);
   }
@@ -526,8 +543,27 @@ export function mountIsland(element, onTick) {
     }
     george.userData.wasMoving=moved;
     george.userData.heading=nextHeading;
-    const desiredAction=moved?walkAction:idleAction;
+    const recent=lastSurvivalEvent&&Date.now()-new Date(lastSurvivalEvent.created_at).getTime()<9000?lastSurvivalEvent.event_type:null;
+    const goal=String(sharedGeorge?.inventory?.current_goal||'').toLowerCase();
+    const lastAction=String(sharedGeorge?.inventory?.last_action||'').toLowerCase();
+    const needs=sharedGeorge?.needs||{};
+    let survivalPose='idle';
+    if(sitting)survivalPose='sit';
+    else if(recent==='tree_cut')survivalPose='saw';
+    else if(recent==='collected_item')survivalPose='pickup';
+    else if(recent==='stored_item')survivalPose='build';
+    else if(recent==='shelter_built')survivalPose='build';
+    else if(georgeHasLog)survivalPose='carry';
+    else if(goal.includes('sleep'))survivalPose='sleep';
+    else if(goal.includes('drink'))survivalPose='drink';
+    else if(goal.includes('eat')||goal.includes('food'))survivalPose='eat';
+    else if(goal.includes('build')||goal.includes('shelter'))survivalPose='build';
+    else if(goal.includes('saw')||goal.includes('cut'))survivalPose='saw';
+    else if(goal.includes('investigate')||(!moved&&goal==='explore'))survivalPose='look';
+    // Do not infer an eating/drinking animation merely from low needs: wait for an actual action.
+    const desiredAction=moved&&survivalPose!=='sit'&&survivalPose!=='sleep'&&survivalPose!=='saw'&&survivalPose!=='pickup'&&survivalPose!=='build'?walkAction:idleAction;
     if(desiredAction&&desiredAction!==activeAction){activeAction?.fadeOut(.25);desiredAction.reset().fadeIn(.25).play();activeAction=desiredAction;}
+    georgeAnimations?.update(dt,elapsed,survivalPose);
     if(adventurer){adventurer.position.y=THREE.MathUtils.lerp(adventurer.position.y,(adventurer.userData.baseY??(adventurer.userData.baseY=adventurer.position.y))-(sitting?.55:0),Math.min(1,dt*3));}
     if(moved)george.rotation.y=nextHeading;
     const ground=height(george.position.x,george.position.z);
