@@ -723,7 +723,23 @@ export function mountIsland(element, onTick) {
           // Avoid per-frame fixed distance increments (which cause FPS-dependent movement).
           const speed=THREE.MathUtils.clamp(delta*.22,1.7,4.2);
           const amount=Math.min(delta,speed*Math.min(dt,.1));
-          const next=avoidObstacleStep(px,pz,x,z,amount);
+          let next=avoidObstacleStep(px,pz,x,z,amount);
+          const progressed=Math.hypot(next.x-px,next.z-pz);
+          // Detect a blocked walking route, not deliberate resting or standing at a destination.
+          if(progressed<.015&&delta>3&&amount>.03){
+            george.userData.blockedFor=(george.userData.blockedFor||0)+Math.min(dt,.1);
+          }else{
+            george.userData.blockedFor=0;
+          }
+          if(george.userData.blockedFor>=4){
+            const dx=(x-px)/delta,dz=(z-pz)/delta;
+            // Five metres to his LEFT relative to the intended walking direction.
+            const leftX=-dz,leftZ=dx;
+            const attempts=[{x:px+leftX*5,z:pz+leftZ*5},{x:px-leftX*5,z:pz-leftZ*5},{x:px+leftX*5+dx*2,z:pz+leftZ*5+dz*2}];
+            const safe=attempts.find(p=>Math.hypot(p.x,p.z)<645&&clearForGeorge(p.x,p.z));
+            if(safe){next=safe;george.userData.unstuckAt=Date.now();}
+            george.userData.blockedFor=0;
+          }
           george.position.x=next.x;
           george.position.z=next.z;
           moved=Math.hypot(next.x-px,next.z-pz)>.001;
