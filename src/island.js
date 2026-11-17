@@ -677,6 +677,7 @@ export function mountIsland(element, onTick) {
   let crateInteraction=null;
   let lastCrateEventKey='';
   let crateWorldPosition=null;
+  let crateEventRefresh=null,cratePositionRefresh=null;
   let sharedRefresh=null;
   if(itemUrl&&itemKey){
     const loadSharedGeorge=()=>fetch(itemUrl+'/rest/v1/world_state?select=position,inventory,needs&id=eq.1',{
@@ -702,8 +703,8 @@ export function mountIsland(element, onTick) {
       .then(rows=>{if(!disposed){const crate=rows?.find(item=>item.owner==='camp'||item.owner==='george');crateWorldPosition=crate?.position||null}})
       .catch(error=>console.warn('Crate location unavailable',error));
     loadCrateEvents();loadCratePosition();
-    window.setInterval(loadCrateEvents,3000);
-    window.setInterval(loadCratePosition,12000);
+    crateEventRefresh=window.setInterval(loadCrateEvents,3000);
+    cratePositionRefresh=window.setInterval(loadCratePosition,12000);
     loadRecentEvent();
     eventRefresh=window.setInterval(loadRecentEvent,5000);
     loadSharedGeorge();
@@ -736,7 +737,7 @@ export function mountIsland(element, onTick) {
           george.position.x=x;george.position.z=z;george.position.y=height(x,z);
           george.userData.hasSynced=true;
           if(!initialCameraSynced){setDefaultGeorgeCamera();initialCameraSynced=true;}
-        }else if(delta>.04){
+        }else if(delta>.04&&!(crateInteraction&&performance.now()-crateInteraction.startedAt<7500)){
           // Catch up smoothly, bounded by a believable travel speed.
           // Avoid per-frame fixed distance increments (which cause FPS-dependent movement).
           const speed=THREE.MathUtils.clamp(delta*.22,1.7,4.2);
@@ -814,5 +815,5 @@ export function mountIsland(element, onTick) {
     wetness=THREE.MathUtils.clamp(wetness+dt*((weather.rain||swimming)? .018 : -.008),0,1);
     const feelsLike=(weather.feelsLike??(temperature+daylight*(1-weather.cloud)*3))-(wetness*5);
     const thermal=feelsLike<12?'Cold':feelsLike>28?'Hot':'Comfortable';if(followGeorge){followTarget.copy(george.position).add(new THREE.Vector3(0,1.7,0));const delta=followTarget.sub(controls.target).multiplyScalar(1-Math.exp(-dt*3.5));controls.target.add(delta);camera.position.add(delta)}controls.update();constrainCamera();controls.update();renderer.render(scene,camera);if(elapsed-last>2){last=elapsed;onTick?.({daylight,phase:cycle,georgeX:george.position.x,georgeZ:george.position.z,weather:weatherLabel,temperature:Math.round(temperature),thermal,swimming,wetness:Math.round(wetness*100),weatherSource:weather.source||'Simulated fallback',wind:Math.round(weather.wind||0),freshwaterNearby:freshwaterAt(george.position.x,george.position.z),georgeMoving:moved,sitting,atCamp:Math.hypot(george.position.x,george.position.z)<9,resting:resting&&Math.hypot(george.position.x,george.position.z)<9})}};
-  animate();return ()=>{disposed=true;itemsDisposed=true;if(itemRefresh!==null)clearInterval(itemRefresh);if(cutTreeRefresh!==null)clearInterval(cutTreeRefresh);if(carriedLogRefresh!==null)clearInterval(carriedLogRefresh);if(eventRefresh!==null)clearInterval(eventRefresh);if(sharedRefresh!==null)clearInterval(sharedRefresh);cancelAnimationFrame(frame);observer.disconnect();renderer.domElement.removeEventListener('pointerdown',onDown);window.removeEventListener('pointerup',onUp);window.removeEventListener('keydown',onKeyDown);window.removeEventListener('keyup',onKeyUp);window.removeEventListener('blur',onBlur);actions.remove();controls.dispose();renderer.dispose();renderer.domElement.remove();scene.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material){const mats=Array.isArray(o.material)?o.material:[o.material];mats.forEach(m=>m.dispose())}})};
+  animate();return ()=>{disposed=true;itemsDisposed=true;if(itemRefresh!==null)clearInterval(itemRefresh);if(cutTreeRefresh!==null)clearInterval(cutTreeRefresh);if(carriedLogRefresh!==null)clearInterval(carriedLogRefresh);if(eventRefresh!==null)clearInterval(eventRefresh);if(sharedRefresh!==null)clearInterval(sharedRefresh);if(crateEventRefresh!==null)clearInterval(crateEventRefresh);if(cratePositionRefresh!==null)clearInterval(cratePositionRefresh);cancelAnimationFrame(frame);observer.disconnect();renderer.domElement.removeEventListener('pointerdown',onDown);window.removeEventListener('pointerup',onUp);window.removeEventListener('keydown',onKeyDown);window.removeEventListener('keyup',onKeyUp);window.removeEventListener('blur',onBlur);actions.remove();controls.dispose();renderer.dispose();renderer.domElement.remove();scene.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material){const mats=Array.isArray(o.material)?o.material:[o.material];mats.forEach(m=>m.dispose())}})};
 }
