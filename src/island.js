@@ -221,48 +221,85 @@ export function mountIsland(element, onTick) {
     dummy.position.set(x,y+20*scale,z);dummy.updateMatrix();leaves.setMatrixAt(i,dummy.matrix);
   }
   trunks.instanceMatrix.needsUpdate=true;leaves.instanceMatrix.needsUpdate=true;scene.add(trunks,leaves);
-  // Optional lightweight Sketchfab forest pack. Original pack: "Various Forest Assets Pack" by Dari.
-  // Keep the existing procedural trees as a fallback until /models/forest/scene.gltf is uploaded.
+  // Replace placeholder trees with the uploaded Sketchfab forest pack by Dari.
+  // Each source tree is normalized around its own trunk: the Sketchfab scene
+  // stores the models at different offsets, which must not leak into instances.
   const forestSource=(import.meta.env.BASE_URL||'/')+'models/forest/scene.gltf';
+  let realisticForest=null;
   new GLTFLoader().load(forestSource,gltf=>{
     if(disposed)return;
     const root=gltf.scene;
-    const sourceTrees=[];
+    root.updateMatrixWorld(true);
+    const treeGroups=[];
     root.traverse(o=>{
       if(!o.name||!(/^(FirTree|NobleFirTree|PineTree|Birch[123]|BirchOrange[12]|Maple_|Oak_|AshTree|AppleTree|CherryTree|PlumTree)/.test(o.name)))return;
-      if(o.type!=='Group')return;
-      const meshes=[];o.traverse(m=>{if(m.isMesh)meshes.push(m)});
-      if(meshes.length)sourceTrees.push({name:o.name,meshes});
+      const meshes=[];
+      o.traverse(m=>{if(m.isMesh)meshes.push(m)});
+      if(meshes.length)treeGroups.push({name:o.name,group:o,meshes});
     });
-    if(!sourceTrees.length)return;
-    const variants=sourceTrees.map(t=>({name:t.name,parts:t.meshes.map(m=>{
-      const geometry=m.geometry.clone(),material=m.material;
-      const inst=new THREE.InstancedMesh(geometry,material,count);
-      inst.count=0;inst.frustumCulled=false;
-      scene.add(inst);return inst;
-    })}));
-    const placements=Array.from({length:count},(_,i)=>{
-      const angle=rand(i+20)*Math.PI*2,r=Math.sqrt(rand(i+400))*620;
-      return {x:Math.cos(angle)*r,z:Math.sin(angle)*r,scale:.7+rand(i+900)*1.1,rotation:rand(i+1300)*Math.PI*2};
+    if(!treeGroups.length){
+      console.error('Forest pack loaded but contained no recognizable tree groups');
+      return;
+    }
+    const forest=new THREE.Group();
+    const variants=treeGroups.map(tree=>{
+      const invGroup=new THREE.Matrix4().copy(tree.group.matrixWorld).invert();
+      const bounds=new THREE.Box3();
+      const prepared=tree.meshes.map(source=>{
+        // Bake mesh-to-tree transform into geometry, preserving foliage and bark.
+        const relative=new THREE.Matrix4().multiplyMatrices(invGroup,source.matrixWorld);
+        const geometry=source.geometry.clone();
+        geometry.applyMatrix4(relative);
+        geometry.computeBoundingBox();
+        bounds.union(geometry.boundingBox);
+        const material=source.material.clone();
+        material.side=THREE.DoubleSide;
+        return {geometry,material};
+      });
+      const center=bounds.getCenter(new THREE.Vector3());
+      const size=bounds.getSize(new THREE.Vector3());
+      // Sketchfab models have varying units. Target a realistic 12-23m canopy.
+      const targetHeight=12+rand(tree.name.length*71)*11;
+      const normalization=targetHeight/Math.max(size.y,.01);
+      const parts=prepared.map(({geometry,material})=>{
+        geometry.translate(-center.x,-bounds.min.y,-center.z);
+        geometry.scale(normalization,normalization,normalization);
+        const inst=new THREE.InstancedMesh(geometry,material,count);
+        inst.count=0;
+        inst.frustumCulled=false;
+        inst.castShadow=true;
+        inst.receiveShadow=true;
+        forest.add(inst);
+        return inst;
+      });
+      return {name:tree.name,parts};
     });
     const matrix=new THREE.Object3D();
-    placements.forEach((p,i)=>{
-      if(Math.hypot(p.x,p.z)<24||cutLocations.some(c=>(c.x-p.x)**2+(c.z-p.z)**2<120))return;
-      const v=variants[Math.floor(rand(i+7400)*variants.length)];
-      matrix.position.set(p.x,height(p.x,p.z),p.z);
-      matrix.rotation.set(0,p.rotation,0);matrix.scale.setScalar(p.scale);
+    let planted=0;
+    for(let i=0;i<count;i++){
+      const angle=rand(i+20)*Math.PI*2,r=Math.sqrt(rand(i+400))*620;
+      const x=Math.cos(angle)*r,z=Math.sin(angle)*r;
+      if(Math.hypot(x,z)<24||cutLocations.some(c=>(c.x-x)**2+(c.z-z)**2<120))continue;
+      const variant=variants[Math.floor(rand(i+7400)*variants.length)];
+      matrix.position.set(x,height(x,z),z);
+      matrix.rotation.set(0,rand(i+1300)*Math.PI*2,0);
+      matrix.scale.setScalar(.72+rand(i+900)*.65);
       matrix.updateMatrix();
-      for(let j=0;j<v.parts.length;j++){
-        const mesh=v.parts[j],source=sourceTrees[variants.indexOf(v)].meshes[j];
-        source.updateMatrix();
-        const world=new THREE.Matrix4().multiplyMatrices(matrix.matrix,source.matrix);
-        mesh.setMatrixAt(mesh.count++,world);
-      }
-    });
-    for(const v of variants)for(const mesh of v.parts)mesh.instanceMatrix.needsUpdate=true;
+      for(const mesh of variant.parts)mesh.setMatrixAt(mesh.count++,matrix.matrix);
+      planted++;
+    }
+    if(!planted){console.error('Forest pack: no trees planted; retaining fallback');return}
+    for(const variant of variants)for(const mesh of variant.parts){
+      mesh.instanceMatrix.needsUpdate=true;
+      mesh.computeBoundingSphere();
+    }
+    scene.add(forest);
+    realisticForest=forest;
     scene.remove(trunks,leaves);
-    console.info('Loaded optimised forest pack:',sourceTrees.length,'tree varieties');
-  },undefined,()=>{/* Forest pack not uploaded yet: retain procedural fallback. */});
+    console.info('Realistic forest loaded:',variants.length,'species and',planted,'trees');
+  },undefined,error=>{
+    console.error('Realistic forest failed to load; procedural trees retained:',error);
+  });
 
   const rockGeo=new THREE.DodecahedronGeometry(1),rockMat=new THREE.MeshStandardMaterial({color:'#8a948b'}),rocks=new THREE.InstancedMesh(rockGeo,rockMat,350);
   for(let i=0;i<350;i++){const a=rand(i+2200)*6.28,r=Math.sqrt(rand(i+2600))*700,x=Math.cos(a)*r,z=Math.sin(a)*r,s=1+rand(i+3100)*4;if(Math.hypot(x,z)<24){dummy.position.set(0,-1000,0);dummy.scale.set(0,0,0);dummy.updateMatrix();rocks.setMatrixAt(i,dummy.matrix);continue;}registerObstacle(x,z,s*.95);dummy.position.set(x,height(x,z)+s*.2,z);dummy.scale.set(s,s*.65,s);dummy.rotation.set(0,rand(i+3200)*6.28,0);dummy.updateMatrix();rocks.setMatrixAt(i,dummy.matrix)}rocks.instanceMatrix.needsUpdate=true;scene.add(rocks);
