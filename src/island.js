@@ -248,7 +248,10 @@ export function mountIsland(element, onTick) {
   // stores the models at different offsets, which must not leak into instances.
   const forestSource=(import.meta.env.BASE_URL||'/')+'models/forest/scene.gltf';
   let realisticForest=null;
-  new GLTFLoader().load(forestSource,gltf=>{
+  // PERFORMANCE TEST: retain lightweight instanced procedural trees instead of loading the detailed forest pack.
+  // Restore detailed forest by changing this flag to true after testing George's animation.
+  const USE_DETAILED_FOREST=false;
+  if(USE_DETAILED_FOREST)new GLTFLoader().load(forestSource,gltf=>{
     if(disposed)return;
     const root=gltf.scene;
     root.updateMatrixWorld(true);
