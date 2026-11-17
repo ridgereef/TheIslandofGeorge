@@ -375,7 +375,7 @@ export function mountIsland(element, onTick) {
     },undefined,error=>console.warn('Island item model could not load:',file,error));
   }
   const itemUrl=import.meta.env.VITE_SUPABASE_URL,itemKey=import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-  let itemRefresh=null,cutTreeRefresh=null,georgeHasLog=false;
+  let itemRefresh=null,cutTreeRefresh=null,carriedLogRefresh=null,eventRefresh=null,georgeHasLog=false;
   if(itemUrl&&itemKey){
     const refreshIslandItems=()=>fetch(itemUrl+'/rest/v1/island_items?select=id,type_id,position,state&state=in.(ground,placed)',{
       headers:{apikey:itemKey,Authorization:'Bearer '+itemKey}
@@ -393,7 +393,7 @@ export function mountIsland(element, onTick) {
       .then(items=>{if(!itemsDisposed)georgeHasLog=items.length>0})
       .catch(error=>console.warn('Carried log status unavailable:',error));
     refreshCarriedLog();
-    window.setInterval(refreshCarriedLog,5000);
+    carriedLogRefresh=window.setInterval(refreshCarriedLog,5000);
     refreshCutTrees();
     cutTreeRefresh=window.setInterval(refreshCutTrees,30000);
     refreshIslandItems();
@@ -506,7 +506,7 @@ export function mountIsland(element, onTick) {
       .then(rows=>{if(!disposed)lastSurvivalEvent=rows?.[0]||null})
       .catch(error=>console.warn('Survival event unavailable:',error));
     loadRecentEvent();
-    window.setInterval(loadRecentEvent,5000);
+    eventRefresh=window.setInterval(loadRecentEvent,5000);
     loadSharedGeorge();
     sharedRefresh=window.setInterval(loadSharedGeorge,5000);
   }
@@ -551,7 +551,7 @@ export function mountIsland(element, onTick) {
     if(sitting)survivalPose='sit';
     else if(recent==='tree_cut')survivalPose='saw';
     else if(recent==='collected_item')survivalPose='pickup';
-    else if(recent==='stored_item')survivalPose='build';
+    else if(recent==='stored_item')survivalPose='putdown';
     else if(recent==='shelter_built')survivalPose='build';
     else if(georgeHasLog)survivalPose='carry';
     else if(goal.includes('sleep'))survivalPose='sleep';
@@ -561,7 +561,7 @@ export function mountIsland(element, onTick) {
     else if(goal.includes('saw')||goal.includes('cut'))survivalPose='saw';
     else if(goal.includes('investigate')||(!moved&&goal==='explore'))survivalPose='look';
     // Do not infer an eating/drinking animation merely from low needs: wait for an actual action.
-    const desiredAction=moved&&survivalPose!=='sit'&&survivalPose!=='sleep'&&survivalPose!=='saw'&&survivalPose!=='pickup'&&survivalPose!=='build'?walkAction:idleAction;
+    const desiredAction=moved&&survivalPose!=='sit'&&survivalPose!=='sleep'&&survivalPose!=='saw'&&survivalPose!=='pickup'&&survivalPose!=='build'&&survivalPose!=='putdown'?walkAction:idleAction;
     if(desiredAction&&desiredAction!==activeAction){activeAction?.fadeOut(.25);desiredAction.reset().fadeIn(.25).play();activeAction=desiredAction;}
     georgeAnimations?.update(dt,elapsed,survivalPose);
     if(adventurer){adventurer.position.y=THREE.MathUtils.lerp(adventurer.position.y,(adventurer.userData.baseY??(adventurer.userData.baseY=adventurer.position.y))-(sitting?.55:0),Math.min(1,dt*3));}
@@ -572,5 +572,5 @@ export function mountIsland(element, onTick) {
     wetness=THREE.MathUtils.clamp(wetness+dt*((weather.rain||swimming)? .018 : -.008),0,1);
     const feelsLike=(weather.feelsLike??(temperature+daylight*(1-weather.cloud)*3))-(wetness*5);
     const thermal=feelsLike<12?'Cold':feelsLike>28?'Hot':'Comfortable';if(followGeorge){followTarget.copy(george.position).add(new THREE.Vector3(0,1.7,0));const delta=followTarget.sub(controls.target).multiplyScalar(1-Math.exp(-dt*3.5));controls.target.add(delta);camera.position.add(delta)}controls.update();constrainCamera();controls.update();renderer.render(scene,camera);if(elapsed-last>2){last=elapsed;onTick?.({daylight,phase:cycle,georgeX:george.position.x,georgeZ:george.position.z,weather:weatherLabel,temperature:Math.round(temperature),thermal,swimming,wetness:Math.round(wetness*100),weatherSource:weather.source||'Simulated fallback',wind:Math.round(weather.wind||0),freshwaterNearby:freshwaterAt(george.position.x,george.position.z),georgeMoving:moved,sitting,atCamp:Math.hypot(george.position.x,george.position.z)<9,resting:resting&&Math.hypot(george.position.x,george.position.z)<9})}};
-  animate();return ()=>{disposed=true;itemsDisposed=true;if(itemRefresh!==null)clearInterval(itemRefresh);if(cutTreeRefresh!==null)clearInterval(cutTreeRefresh);if(sharedRefresh!==null)clearInterval(sharedRefresh);cancelAnimationFrame(frame);observer.disconnect();renderer.domElement.removeEventListener('pointerdown',onDown);window.removeEventListener('pointerup',onUp);window.removeEventListener('keydown',onKeyDown);window.removeEventListener('keyup',onKeyUp);window.removeEventListener('blur',onBlur);actions.remove();controls.dispose();renderer.dispose();renderer.domElement.remove();scene.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material){const mats=Array.isArray(o.material)?o.material:[o.material];mats.forEach(m=>m.dispose())}})};
+  animate();return ()=>{disposed=true;itemsDisposed=true;if(itemRefresh!==null)clearInterval(itemRefresh);if(cutTreeRefresh!==null)clearInterval(cutTreeRefresh);if(carriedLogRefresh!==null)clearInterval(carriedLogRefresh);if(eventRefresh!==null)clearInterval(eventRefresh);if(sharedRefresh!==null)clearInterval(sharedRefresh);cancelAnimationFrame(frame);observer.disconnect();renderer.domElement.removeEventListener('pointerdown',onDown);window.removeEventListener('pointerup',onUp);window.removeEventListener('keydown',onKeyDown);window.removeEventListener('keyup',onKeyUp);window.removeEventListener('blur',onBlur);actions.remove();controls.dispose();renderer.dispose();renderer.domElement.remove();scene.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material){const mats=Array.isArray(o.material)?o.material:[o.material];mats.forEach(m=>m.dispose())}})};
 }
