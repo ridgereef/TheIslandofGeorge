@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 export function mountIsland(element, onTick) {
   const scene=new THREE.Scene(); scene.background=new THREE.Color('#87bed0'); scene.fog=new THREE.Fog('#87bed0',1100,3200);
   const camera=new THREE.PerspectiveCamera(58,1,.1,5000); camera.position.set(15,12,22); camera.lookAt(0,3,0);
@@ -93,6 +94,31 @@ export function mountIsland(element, onTick) {
   const part=(geo,mat,x,y,z)=>{const p=new THREE.Mesh(geo,mat);p.position.set(x,y,z);p.castShadow=true;george.add(p);return p;};
   part(new THREE.CapsuleGeometry(.36,.9,4,8),shirt,0,1.8,0);part(new THREE.SphereGeometry(.32,12,12),skin,0,2.75,0);part(new THREE.CapsuleGeometry(.13,.65,4,8),pants,-.22,.8,0);part(new THREE.CapsuleGeometry(.13,.65,4,8),pants,.22,.8,0);part(new THREE.CapsuleGeometry(.12,.55,4,8),skin,-.5,1.8,0);part(new THREE.CapsuleGeometry(.12,.55,4,8),skin,.5,1.8,0);
   george.position.set(0,groundY,0);scene.add(george);
+  // Load the user's original Adventurer GLB once it is present in public/models.
+  // Keep the placeholder only as a fallback when the asset cannot be loaded.
+  let adventurer=null,adventurerMixer=null,walkAction=null,idleAction=null,activeAction=null;
+  const loader=new GLTFLoader();
+  loader.load('/models/Adventurer.glb',gltf=>{
+    if(disposed)return;
+    adventurer=gltf.scene;
+    const bounds=new THREE.Box3().setFromObject(adventurer);
+    const size=bounds.getSize(new THREE.Vector3());
+    const center=bounds.getCenter(new THREE.Vector3());
+    const scale=2.9/Math.max(size.y,.001);
+    adventurer.scale.setScalar(scale);
+    adventurer.position.set(-center.x*scale,-bounds.min.y*scale,-center.z*scale);
+    george.add(adventurer);
+    george.children.forEach(child=>{if(child!==adventurer)child.visible=false});
+    adventurer.traverse(obj=>{if(obj.isMesh){obj.castShadow=true;obj.receiveShadow=true}});
+    adventurerMixer=new THREE.AnimationMixer(adventurer);
+    const findClip=name=>gltf.animations.find(a=>a.name.toLowerCase()===name.toLowerCase());
+    const walk=findClip('Walk'),idle=findClip('Idle');
+    if(walk)walkAction=adventurerMixer.clipAction(walk);
+    if(idle)idleAction=adventurerMixer.clipAction(idle);
+    activeAction=walkAction||idleAction;
+    activeAction?.play();
+  },undefined,error=>{console.warn('Adventurer model not available; showing temporary character.',error)});
+
   controls.target.set(0,groundY+2,0);
   camera.position.copy(controls.target).add(new THREE.Vector3(15,9,22));
   controls.update();
@@ -134,7 +160,7 @@ export function mountIsland(element, onTick) {
     return {x,z,limited:false};
   };
   let frame,elapsed=0,last=0,disposed=false;const clock=new THREE.Clock();const resize=()=>{const w=element.clientWidth,h=Math.max(280,element.clientHeight);renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix()};const observer=new ResizeObserver(resize);observer.observe(element);resize();
-  const animate=()=>{if(disposed)return;frame=requestAnimationFrame(animate);const dt=Math.min(clock.getDelta(),.1);elapsed+=dt;const cycle=getDayPhase(),angle=cycle*Math.PI*2;
+  const animate=()=>{if(disposed)return;frame=requestAnimationFrame(animate);const dt=Math.min(clock.getDelta(),.1);elapsed+=dt;adventurerMixer?.update(dt);const cycle=getDayPhase(),angle=cycle*Math.PI*2;
     // Approximate daylight window 06:00–20:00 NZ local time, with smooth twilight.
     const hour=cycle*24;
     const smooth=(a,b,v)=>{const t=THREE.MathUtils.clamp((v-a)/(b-a),0,1);return t*t*(3-2*t)};
