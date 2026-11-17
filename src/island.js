@@ -139,6 +139,26 @@ export function mountIsland(element, onTick) {
     const temp=16+6*Math.sin((p.hour-7)*Math.PI/12)+5*(rand(seed+15)-.5)-(rain?3:0);
     return {cloud,rain,temp,condition:rain?'Rain':cloud>.55?'Cloudy':cloud>.3?'Partly cloudy':'Sunny'};
   };
+  // Open-Meteo current model conditions for Nelson, NZ (not a station observation).
+  // Refresh every ten minutes; keep the last successful response during outages.
+  const weatherUrl='https://api.open-meteo.com/v1/forecast?latitude=-41.2706&longitude=173.2840&current=temperature_2m,apparent_temperature,precipitation,cloud_cover,wind_speed_10m,weather_code&timezone=Pacific%2FAuckland&forecast_days=1';
+  let liveWeather=null,weatherFetchedAt=0,weatherRequestPending=false;
+  const refreshWeather=async()=>{
+    if(weatherRequestPending||Date.now()-weatherFetchedAt<600000)return;
+    weatherRequestPending=true;
+    try{
+      const response=await fetch(weatherUrl);
+      if(!response.ok)throw new Error('Weather HTTP '+response.status);
+      const data=await response.json(),v=data.current;
+      if(!v||!Number.isFinite(v.temperature_2m)||!Number.isFinite(v.cloud_cover)||!Number.isFinite(v.precipitation))throw new Error('Incomplete weather data');
+      if(disposed)return;
+      const cloud=THREE.MathUtils.clamp(v.cloud_cover/100,0,1),rain=v.precipitation>0;
+      liveWeather={cloud,rain,temp:v.temperature_2m,feelsLike:Number.isFinite(v.apparent_temperature)?v.apparent_temperature:v.temperature_2m,wind:Number.isFinite(v.wind_speed_10m)?v.wind_speed_10m:0,condition:rain?'Rain':cloud>.65?'Cloudy':cloud>.3?'Partly cloudy':'Sunny',source:'Open-Meteo · Nelson'};
+      weatherFetchedAt=Date.now();
+    }catch(error){console.warn('Nelson weather unavailable; using cached or simulated weather.',error);weatherFetchedAt=Date.now();}
+    finally{weatherRequestPending=false}
+  };
+  refreshWeather();
   const cloudMaterial=new THREE.MeshStandardMaterial({color:'#dbe3e2',transparent:true,opacity:.72,roughness:1,depthWrite:false});
   const clouds=new THREE.Group();scene.add(clouds);
   for(let i=0;i<18;i++){const a=rand(i+5000)*Math.PI*2,r=rand(i+5300)*850;
@@ -164,7 +184,7 @@ export function mountIsland(element, onTick) {
     // Approximate daylight window 06:00–20:00 NZ local time, with smooth twilight.
     const hour=cycle*24;
     const smooth=(a,b,v)=>{const t=THREE.MathUtils.clamp((v-a)/(b-a),0,1);return t*t*(3-2*t)};
-    const daylight=Math.max(.07,smooth(5.5,7,hour)*(1-smooth(19,20.5,hour)));hemi.intensity=.4+daylight*1.7;sun.intensity=daylight*2.5;sun.position.set(Math.cos((hour-12)*Math.PI/12)*850,Math.sin((hour-6)*Math.PI/14)*950,300);scene.background.set(daylight>.3?'#87bed0':'#0a172d');scene.fog.color.copy(scene.background);flame.scale.setScalar(.9+Math.sin(elapsed*9)*.1);const weather=weatherAt(new Date());weatherLabel=weather.condition;temperature=weather.temp;
+    const daylight=Math.max(.07,smooth(5.5,7,hour)*(1-smooth(19,20.5,hour)));hemi.intensity=.4+daylight*1.7;sun.intensity=daylight*2.5;sun.position.set(Math.cos((hour-12)*Math.PI/12)*850,Math.sin((hour-6)*Math.PI/14)*950,300);scene.background.set(daylight>.3?'#87bed0':'#0a172d');scene.fog.color.copy(scene.background);flame.scale.setScalar(.9+Math.sin(elapsed*9)*.1);if(Date.now()-weatherFetchedAt>=600000)refreshWeather();const weather=liveWeather||weatherAt(new Date());weatherLabel=weather.condition;temperature=weather.temp;
     clouds.visible=weather.cloud>.2;cloudMaterial.opacity=.3+weather.cloud*.55;
     clouds.position.x=(elapsed*1.5)%120;clouds.position.z=(elapsed*.5)%80;
     rainLines.visible=weather.rain;rainLines.position.set(george.position.x,george.position.y+15,george.position.z);
@@ -181,7 +201,7 @@ export function mountIsland(element, onTick) {
     george.position.y=(swimming?-2.3:ground)+Math.sin(elapsed*(swimming?3:7))*(swimming?.22:.035);
     george.rotation.y=Math.atan2(Math.cos(wander*.12),-Math.sin(wander*.12));
     wetness=THREE.MathUtils.clamp(wetness+dt*((weather.rain||swimming)? .018 : -.008),0,1);
-    const feelsLike=temperature-(wetness*5)+(daylight*(1-weather.cloud)*3);
-    const thermal=feelsLike<12?'Cold':feelsLike>28?'Hot':'Comfortable';if(followGeorge){followTarget.copy(george.position).add(new THREE.Vector3(0,2,0));const delta=followTarget.sub(controls.target).multiplyScalar(1-Math.exp(-dt*3.5));controls.target.add(delta);camera.position.add(delta)}controls.update();renderer.render(scene,camera);if(elapsed-last>2){last=elapsed;onTick?.({daylight,phase:cycle,georgeX:george.position.x,georgeZ:george.position.z,weather:weatherLabel,temperature:Math.round(temperature),thermal,swimming,wetness:Math.round(wetness*100)})}};
+    const feelsLike=(weather.feelsLike??(temperature+daylight*(1-weather.cloud)*3))-(wetness*5);
+    const thermal=feelsLike<12?'Cold':feelsLike>28?'Hot':'Comfortable';if(followGeorge){followTarget.copy(george.position).add(new THREE.Vector3(0,2,0));const delta=followTarget.sub(controls.target).multiplyScalar(1-Math.exp(-dt*3.5));controls.target.add(delta);camera.position.add(delta)}controls.update();renderer.render(scene,camera);if(elapsed-last>2){last=elapsed;onTick?.({daylight,phase:cycle,georgeX:george.position.x,georgeZ:george.position.z,weather:weatherLabel,temperature:Math.round(temperature),thermal,swimming,wetness:Math.round(wetness*100),weatherSource:weather.source||'Simulated fallback',wind:Math.round(weather.wind||0)})}};
   animate();return ()=>{disposed=true;cancelAnimationFrame(frame);observer.disconnect();renderer.domElement.removeEventListener('pointerdown',onDown);renderer.domElement.removeEventListener('wheel',onWheel);renderer.domElement.removeEventListener('touchstart',onTouch);window.removeEventListener('pointerup',onUp);actions.remove();controls.dispose();renderer.dispose();renderer.domElement.remove();scene.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material){const mats=Array.isArray(o.material)?o.material:[o.material];mats.forEach(m=>m.dispose())}})};
 }
