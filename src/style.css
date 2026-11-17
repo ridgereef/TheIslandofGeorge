@@ -56,3 +56,15 @@ footer{color:#647a80}
 .memory-pin{position:absolute;transform:translate(-50%,-50%);display:flex;align-items:center;justify-content:center;width:12px;height:12px;border-radius:50%;background:#3e8c67;color:#fff;font-size:12px;box-shadow:0 0 0 1px #fff8;pointer-events:auto}
 .memory-pin.camp{background:#206b98;width:20px;height:20px}.memory-pin.clay{background:#a6533d;width:17px;height:17px}.memory-pin.stale{opacity:.25}
 .memory-count{font-size:11px;color:#647a80;margin:9px 0 0}
+
+/* Member accounts and admin sign-in */
+.account-button{border:1px solid #b8d2ca;background:#fff;color:#24694f;border-radius:20px;padding:8px 13px;font-size:12px;font-weight:700;cursor:pointer;margin-right:12px}
+.auth-backdrop{position:fixed;inset:0;z-index:10000;background:#102c2bb5;display:flex;align-items:center;justify-content:center;padding:16px}
+.auth-dialog{position:relative;width:min(100%,420px);max-height:90vh;overflow-y:auto;background:#fff;color:#1f3636;border-radius:15px;padding:28px;box-shadow:0 20px 65px #0003;box-sizing:border-box}
+.auth-dialog h2{font-size:22px;margin:0 0 18px}.auth-dialog form{display:flex;flex-direction:column;gap:13px}.auth-dialog label{display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:600}
+.auth-dialog input{padding:11px;border:1px solid #bbcbcd;border-radius:8px;background:white;color:#1f3636;font:inherit;box-sizing:border-box;width:100%}
+.auth-close{position:absolute;right:15px;top:12px;border:0;background:none;color:#536970;font-size:26px;cursor:pointer}
+.auth-primary{width:100%;border:0;border-radius:8px;background:#237a59;color:#fff;font-weight:700;padding:12px;cursor:pointer;margin:8px 0}
+.auth-primary:disabled{opacity:.55}.auth-secondary{width:100%;border:1px solid #bbcfc9;border-radius:8px;background:#fff;padding:10px;color:#24694f;cursor:pointer}
+.auth-links{display:flex;gap:12px;flex-wrap:wrap;justify-content:center}.auth-links button{border:0;background:none;color:#237a59;text-decoration:underline;cursor:pointer;font-size:12px}
+@media(max-width:650px){.topbar .status{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:4px}.account-button{margin-right:4px}.auth-dialog{padding:22px}}
