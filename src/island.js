@@ -611,6 +611,37 @@ export function mountIsland(element, onTick, visualOptions={}) {
   // Keep the placeholder only as a fallback when the asset cannot be loaded.
   let adventurer=null,adventurerMixer=null,walkAction=null,idleAction=null,activeAction=null,georgeAnimations=null;
   const loader=new GLTFLoader();
+  // The axe is attached to the right-hand bone, never left floating in world space.
+  // Prefer the uploaded model; retain a visible low-poly fallback if its filename differs.
+  const axeGrip=new THREE.Group();
+  const axeHandle=new THREE.Mesh(new THREE.CylinderGeometry(.035,.042,.92,8),new THREE.MeshStandardMaterial({color:0x785037}));
+  axeHandle.position.y=.24;axeGrip.add(axeHandle);
+  const axeHead=new THREE.Mesh(new THREE.BoxGeometry(.38,.17,.13),new THREE.MeshStandardMaterial({color:0xa6b4bb,metalness:.65,roughness:.38}));
+  axeHead.position.set(.15,.65,0);axeGrip.add(axeHead);
+  axeGrip.visible=false;
+  let axeModelLoaded=false;
+  const axeCandidates=['/models/Axe.glb','/models/axe.glb','/models/axe_1k.glb','/models/wood_axe.glb'];
+  const tryAxeModel=index=>{
+    if(index>=axeCandidates.length||disposed)return;
+    loader.load(axeCandidates[index],gltf=>{
+      if(disposed)return;
+      const model=gltf.scene;
+      const bounds=new THREE.Box3().setFromObject(model);
+      const size=bounds.getSize(new THREE.Vector3());
+      model.scale.setScalar(.92/Math.max(size.x,size.y,size.z,.001));
+      const center=bounds.getCenter(new THREE.Vector3());
+      model.position.copy(center).multiplyScalar(-model.scale.x);
+      axeGrip.clear();axeGrip.add(model);axeModelLoaded=true;
+    },undefined,()=>tryAxeModel(index+1));
+  };
+  const attachAxe=()=>{
+    if(!adventurer)return;
+    let hand=null;adventurer.traverse(node=>{if(node.isBone&&/^(hand\.r|righthand|hand_r|right_hand)$/i.test(node.name))hand=node});
+    if(!hand)return;
+    hand.add(axeGrip);axeGrip.position.set(0,-.05,.05);axeGrip.rotation.set(0,0,Math.PI/2);
+    tryAxeModel(0);
+  };
+
   loader.load('/models/Adventurer.glb',gltf=>{
     if(disposed)return;
     adventurer=gltf.scene;
@@ -625,7 +656,7 @@ export function mountIsland(element, onTick, visualOptions={}) {
     george.children.forEach(child=>{if(child!==adventurer)child.visible=false});
     adventurer.traverse(obj=>{if(obj.isMesh){obj.castShadow=true;obj.receiveShadow=true}});
     adventurerMixer=new THREE.AnimationMixer(adventurer);
-    georgeAnimations=createGeorgeAnimationController(adventurer);
+    georgeAnimations=createGeorgeAnimationController(adventurer);attachAxe();
     // Root-motion position tracks can drive the entire character below terrain.
     // The shared world coordinates own translation; animation clips own limb motion.
     const findClip=name=>{
@@ -840,11 +871,23 @@ export function mountIsland(element, onTick, visualOptions={}) {
         george.rotation.y=nextHeading;
       }
     }
+    const chopping=sharedGeorge?.inventory?.chopping;
+    const isChopping=!!chopping;
+    axeGrip.visible=isChopping;
+    if(isChopping){
+      const tx=Number(chopping.x),tz=Number(chopping.z);
+      if(Number.isFinite(tx)&&Number.isFinite(tz)){
+        // Face the trunk throughout the swing sequence.
+        const dx=tx-george.position.x,dz=tz-george.position.z;
+        if(Math.hypot(dx,dz)>.02)george.rotation.y=Math.atan2(dx,dz);
+      }
+    }
     const goal=String(sharedGeorge?.inventory?.current_goal||'').toLowerCase();
     const lastAction=String(sharedGeorge?.inventory?.last_action||'').toLowerCase();
     const needs=sharedGeorge?.needs||{};
     let survivalPose='idle';
-    if(sitting)survivalPose='sit';
+    if(isChopping)survivalPose='chop';
+    else if(sitting)survivalPose='sit';
     else if(recent==='tree_cut')survivalPose='saw';
     else if(recent==='ate_apple')survivalPose='eat';
     else if(recent==='collected_item'||recent==='swapped_item')survivalPose='pickup';
@@ -860,12 +903,12 @@ export function mountIsland(element, onTick, visualOptions={}) {
     else if(goal.includes('investigate'))survivalPose='look';
     else if(!moved)survivalPose='think';
     // Do not infer an eating/drinking animation merely from low needs: wait for an actual action.
-    const desiredAction=moved&&!sitting&&!pickingUp&&!rummaging?walkAction:idleAction;
+    const desiredAction=moved&&!sitting&&!pickingUp&&!rummaging&&!isChopping?walkAction:idleAction;
     if(desiredAction&&desiredAction!==activeAction){activeAction?.fadeOut(.25);desiredAction.reset().fadeIn(.25).play();activeAction=desiredAction;}
     // Mixer updates first, then the procedural arm/leg/head offsets layer on top.
-    georgeAnimations?.update(dt,elapsed,rummaging?'rummage':pickingUp?'pickup':moved&&!sitting&&!walkAction?'walk':moved&&!sitting?'idle':survivalPose);
+    georgeAnimations?.update(dt,elapsed,isChopping?'chop':rummaging?'rummage':pickingUp?'pickup':moved&&!sitting&&!walkAction?'walk':moved&&!sitting?'idle':survivalPose);
     if(adventurer){const baseline=adventurer.userData.groundOffset??0;adventurer.position.y=THREE.MathUtils.lerp(adventurer.position.y,baseline-(sitting?.55:0)-(pickingUp?.24:0)-(rummaging?.18:0),Math.min(1,dt*8));}
-    if(moved&&!rummaging)george.rotation.y=nextHeading;
+    if(moved&&!rummaging&&!isChopping)george.rotation.y=nextHeading;
     const solidPosition=resolveObstacleOverlap(george.position.x,george.position.z);
     george.position.x=solidPosition.x;george.position.z=solidPosition.z;
     const ground=height(george.position.x,george.position.z);
