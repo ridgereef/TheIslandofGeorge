@@ -73,6 +73,7 @@ export function mountIsland(element, onTick) {
   });
   actions.appendChild(followButton);
   addButton('⌂','Reset camera and follow George',()=>{setFollow(true);const target=george.position.clone().add(new THREE.Vector3(0,1.7,0));controls.target.copy(target);camera.position.copy(target).add(new THREE.Vector3(0,0.32,1.49));camera.lookAt(controls.target)});
+  addButton('⚒','Rearrange George’s camp',()=>arrangeCamp());
   element.appendChild(actions);
   const hemi=new THREE.HemisphereLight(0xb8dfff,0x304f38,2.1);scene.add(hemi);
   const sun=new THREE.DirectionalLight(0xffe3b0,2.4);sun.position.set(-15,25,10);sun.castShadow=true;sun.shadow.mapSize.set(1024,1024);sun.shadow.camera.left=-900;sun.shadow.camera.right=900;sun.shadow.camera.top=900;sun.shadow.camera.bottom=-900;scene.add(sun);
@@ -177,15 +178,34 @@ export function mountIsland(element, onTick) {
   };
   const count=1700,trunks=new THREE.InstancedMesh(trunkGeo,trunkMat,count),leaves=new THREE.InstancedMesh(leafGeo,leafMat,count),dummy=new THREE.Object3D();
   for(let i=0;i<count;i++){const angle=rand(i+20)*Math.PI*2,r=Math.sqrt(rand(i+400))*620,x=Math.cos(angle)*r,z=Math.sin(angle)*r,y=height(x,z),scale=.7+rand(i+900)*1.1;
-    registerObstacle(x,z,1.4*scale);dummy.position.set(x,y+5*scale,z);dummy.scale.set(scale,scale,scale);dummy.rotation.set(0,rand(i+1300)*6.28,0);dummy.updateMatrix();trunks.setMatrixAt(i,dummy.matrix);
+    if(Math.hypot(x,z)<24){dummy.position.set(0,-1000,0);dummy.scale.set(0,0,0);dummy.updateMatrix();trunks.setMatrixAt(i,dummy.matrix);leaves.setMatrixAt(i,dummy.matrix);continue;}registerObstacle(x,z,1.4*scale);dummy.position.set(x,y+5*scale,z);dummy.scale.set(scale,scale,scale);dummy.rotation.set(0,rand(i+1300)*6.28,0);dummy.updateMatrix();trunks.setMatrixAt(i,dummy.matrix);
     dummy.position.set(x,y+20*scale,z);dummy.updateMatrix();leaves.setMatrixAt(i,dummy.matrix);
   }
   trunks.instanceMatrix.needsUpdate=true;leaves.instanceMatrix.needsUpdate=true;scene.add(trunks,leaves);
   const rockGeo=new THREE.DodecahedronGeometry(1),rockMat=new THREE.MeshStandardMaterial({color:'#8a948b'}),rocks=new THREE.InstancedMesh(rockGeo,rockMat,350);
-  for(let i=0;i<350;i++){const a=rand(i+2200)*6.28,r=Math.sqrt(rand(i+2600))*700,x=Math.cos(a)*r,z=Math.sin(a)*r,s=1+rand(i+3100)*4;registerObstacle(x,z,s*.95);dummy.position.set(x,height(x,z)+s*.2,z);dummy.scale.set(s,s*.65,s);dummy.rotation.set(0,rand(i+3200)*6.28,0);dummy.updateMatrix();rocks.setMatrixAt(i,dummy.matrix)}rocks.instanceMatrix.needsUpdate=true;scene.add(rocks);
+  for(let i=0;i<350;i++){const a=rand(i+2200)*6.28,r=Math.sqrt(rand(i+2600))*700,x=Math.cos(a)*r,z=Math.sin(a)*r,s=1+rand(i+3100)*4;if(Math.hypot(x,z)<24){dummy.position.set(0,-1000,0);dummy.scale.set(0,0,0);dummy.updateMatrix();rocks.setMatrixAt(i,dummy.matrix);continue;}registerObstacle(x,z,s*.95);dummy.position.set(x,height(x,z)+s*.2,z);dummy.scale.set(s,s*.65,s);dummy.rotation.set(0,rand(i+3200)*6.28,0);dummy.updateMatrix();rocks.setMatrixAt(i,dummy.matrix)}rocks.instanceMatrix.needsUpdate=true;scene.add(rocks);
   const groundY=height(0,0);
-  const camp=mesh(new THREE.CylinderGeometry(2.2,2.7,.5,10),0x544c42,12,groundY+.25,10);
-  const flame=mesh(new THREE.ConeGeometry(1.1,3,7),0xff8e38,12,groundY+2,10);
+  // George's initial camp: a clear, sheltered base with rearrangeable objects.
+  const campRoot=new THREE.Group();scene.add(campRoot);
+  const placeCampObject=(geo,color,x,z,yOffset=0)=>{
+    const obj=new THREE.Mesh(geo,new THREE.MeshStandardMaterial({color,roughness:.9}));
+    obj.position.set(x,height(x,z)+yOffset,z);obj.castShadow=true;obj.receiveShadow=true;
+    campRoot.add(obj);return obj;
+  };
+  placeCampObject(new THREE.ConeGeometry(5,4.5,4),0x9d8b62,8,4,2.25).rotation.y=Math.PI/4;
+  placeCampObject(new THREE.CylinderGeometry(1.3,1.6,.5,10),0x5a5147,-3,4,.25);
+  const flame=placeCampObject(new THREE.ConeGeometry(.65,1.6,7),0xffa145,-3,4,1.05);
+  placeCampObject(new THREE.BoxGeometry(3,.4,1.2),0x775333,3,-3,.4);
+  placeCampObject(new THREE.BoxGeometry(1.8,1.1,1.3),0x67452c,-5,-3,.55);
+  let campLayout=0;
+  const arrangeCamp=()=>{
+    campLayout=(campLayout+1)%3;
+    const positions=[[[8,4],[3,-3],[-5,-3]],[[9,-5],[-6,4],[4,8]],[[-8,-4],[7,7],[8,-7]]][campLayout];
+    [campRoot.children[0],campRoot.children[3],campRoot.children[4]].forEach((o,i)=>{
+      const [x,z]=positions[i];o.position.x=x;o.position.z=z;
+      o.position.y=height(x,z)+(i===0?2.25:i===1?.4:.55);
+    });
+  };
   const george=new THREE.Group();const shirt=new THREE.MeshStandardMaterial({color:0xe2b24e});const skin=new THREE.MeshStandardMaterial({color:0xe7b38b});const pants=new THREE.MeshStandardMaterial({color:0x354a60});
   const part=(geo,mat,x,y,z)=>{const p=new THREE.Mesh(geo,mat);p.position.set(x,y,z);p.castShadow=true;george.add(p);return p;};
   part(new THREE.CapsuleGeometry(.36,.9,4,8),shirt,0,1.8,0);part(new THREE.SphereGeometry(.32,12,12),skin,0,2.75,0);part(new THREE.CapsuleGeometry(.13,.65,4,8),pants,-.22,.8,0);part(new THREE.CapsuleGeometry(.13,.65,4,8),pants,.22,.8,0);part(new THREE.CapsuleGeometry(.12,.55,4,8),skin,-.5,1.8,0);part(new THREE.CapsuleGeometry(.12,.55,4,8),skin,.5,1.8,0);
@@ -292,7 +312,8 @@ export function mountIsland(element, onTick) {
     const routeAngle=elapsed*.004;
     const routeRadius=620+95*Math.sin(elapsed*.012);
     const seekWater=george.userData.seekWater===true;
-    const destination=seekWater?safePosition(-455,100):safePosition(Math.sin(routeAngle)*routeRadius,Math.cos(routeAngle)*routeRadius);
+    const resting=typeof window!=='undefined'&&window.__georgeNeedsRest===true;
+    const destination=resting?safePosition(1,1):seekWater?safePosition(-455,100):safePosition(Math.sin(routeAngle)*routeRadius,Math.cos(routeAngle)*routeRadius);
     const dx=destination.x-george.position.x,dz=destination.z-george.position.z;
     const desired=Math.atan2(dx,dz),speed=3.1*dt;
     const currentHeading=george.userData.heading??desired;
@@ -324,6 +345,6 @@ export function mountIsland(element, onTick) {
     george.position.y=(swimming?-2.3:ground)+Math.sin(elapsed*(swimming?3:7))*(swimming?.22:.035);
     wetness=THREE.MathUtils.clamp(wetness+dt*((weather.rain||swimming)? .018 : -.008),0,1);
     const feelsLike=(weather.feelsLike??(temperature+daylight*(1-weather.cloud)*3))-(wetness*5);
-    const thermal=feelsLike<12?'Cold':feelsLike>28?'Hot':'Comfortable';if(followGeorge){followTarget.copy(george.position).add(new THREE.Vector3(0,1.7,0));const delta=followTarget.sub(controls.target).multiplyScalar(1-Math.exp(-dt*3.5));controls.target.add(delta);camera.position.add(delta)}controls.update();constrainCamera();renderer.render(scene,camera);if(elapsed-last>2){last=elapsed;onTick?.({daylight,phase:cycle,georgeX:george.position.x,georgeZ:george.position.z,weather:weatherLabel,temperature:Math.round(temperature),thermal,swimming,wetness:Math.round(wetness*100),weatherSource:weather.source||'Simulated fallback',wind:Math.round(weather.wind||0),freshwaterNearby:freshwaterAt(george.position.x,george.position.z),georgeMoving:moved})}};
+    const thermal=feelsLike<12?'Cold':feelsLike>28?'Hot':'Comfortable';if(followGeorge){followTarget.copy(george.position).add(new THREE.Vector3(0,1.7,0));const delta=followTarget.sub(controls.target).multiplyScalar(1-Math.exp(-dt*3.5));controls.target.add(delta);camera.position.add(delta)}controls.update();constrainCamera();renderer.render(scene,camera);if(elapsed-last>2){last=elapsed;onTick?.({daylight,phase:cycle,georgeX:george.position.x,georgeZ:george.position.z,weather:weatherLabel,temperature:Math.round(temperature),thermal,swimming,wetness:Math.round(wetness*100),weatherSource:weather.source||'Simulated fallback',wind:Math.round(weather.wind||0),freshwaterNearby:freshwaterAt(george.position.x,george.position.z),georgeMoving:moved,atCamp:Math.hypot(george.position.x,george.position.z)<9,resting:resting&&Math.hypot(george.position.x,george.position.z)<9})}};
   animate();return ()=>{disposed=true;cancelAnimationFrame(frame);observer.disconnect();renderer.domElement.removeEventListener('pointerdown',onDown);window.removeEventListener('pointerup',onUp);actions.remove();controls.dispose();renderer.dispose();renderer.domElement.remove();scene.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material){const mats=Array.isArray(o.material)?o.material:[o.material];mats.forEach(m=>m.dispose())}})};
 }
