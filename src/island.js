@@ -473,13 +473,26 @@ export function mountIsland(element, onTick) {
     const scale=2.9/Math.max(size.y,.001);
     adventurer.scale.setScalar(scale);
     adventurer.position.set(-center.x*scale,-bounds.min.y*scale,-center.z*scale);
+    adventurer.userData.groundOffset=adventurer.position.y;
     george.add(adventurer);
     george.children.forEach(child=>{if(child!==adventurer)child.visible=false});
     adventurer.traverse(obj=>{if(obj.isMesh){obj.castShadow=true;obj.receiveShadow=true}});
     adventurerMixer=new THREE.AnimationMixer(adventurer);
     georgeAnimations=createGeorgeAnimationController(adventurer);
+    // Root-motion position tracks can drive the entire character below terrain.
+    // The shared world coordinates own translation; animation clips own limb motion.
     const findClip=name=>gltf.animations.find(a=>a.name.toLowerCase()===name.toLowerCase());
-    const walk=findClip('Walk'),idle=findClip('Idle');
+    const withoutRootTranslation=clip=>{
+      if(!clip)return null;
+      const filtered=clip.clone();
+      filtered.tracks=filtered.tracks.filter(track=>{
+        if(!track.name.endsWith('.position'))return true;
+        const target=track.name.slice(0,-'.position'.length);
+        return !(!target||target===adventurer.name||target==='Armature'||target==='Root'||target==='Hips'||target==='mixamorigHips');
+      });
+      return filtered;
+    };
+    const walk=withoutRootTranslation(findClip('Walk')),idle=withoutRootTranslation(findClip('Idle'));
     if(walk)walkAction=adventurerMixer.clipAction(walk);
     if(idle)idleAction=adventurerMixer.clipAction(idle);
     activeAction=walkAction||idleAction;
@@ -625,7 +638,7 @@ export function mountIsland(element, onTick) {
     if(desiredAction&&desiredAction!==activeAction){activeAction?.fadeOut(.25);desiredAction.reset().fadeIn(.25).play();activeAction=desiredAction;}
     // Mixer updates first, then the procedural arm/leg/head offsets layer on top.
     georgeAnimations?.update(dt,elapsed,moved&&!sitting?'idle':survivalPose);
-    if(adventurer){adventurer.position.y=THREE.MathUtils.lerp(adventurer.position.y,(adventurer.userData.baseY??(adventurer.userData.baseY=adventurer.position.y))-(sitting?.55:0),Math.min(1,dt*3));}
+    if(adventurer){const baseline=adventurer.userData.groundOffset??0;adventurer.position.y=THREE.MathUtils.lerp(adventurer.position.y,baseline-(sitting?.55:0),Math.min(1,dt*8));}
     if(moved)george.rotation.y=nextHeading;
     const ground=height(george.position.x,george.position.z);
     const swimming=ground< -1;
