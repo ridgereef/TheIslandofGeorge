@@ -105,7 +105,7 @@ export function mountIsland(element, onTick) {
     }
   });
   actions.appendChild(followButton);
-  addButton('⌂','Reset camera and follow George',()=>{setFollow(true);const target=george.position.clone().add(new THREE.Vector3(0,1.7,0));controls.target.copy(target);camera.position.copy(target).add(new THREE.Vector3(8.5,3.2,10.5));camera.lookAt(controls.target);constrainCamera()});
+  addButton('⌂','Reset camera and follow George',()=>{setFollow(true);const target=george.position.clone().add(new THREE.Vector3(0,1.7,0));controls.target.copy(target);setDefaultGeorgeCamera();constrainCamera()});
   addButton('⚒','Rearrange George’s camp',()=>arrangeCamp());
   element.appendChild(actions);
   const hemi=new THREE.HemisphereLight(0xb8dfff,0x304f38,2.1);scene.add(hemi);
@@ -122,6 +122,22 @@ export function mountIsland(element, onTick) {
     const mountain=210*Math.exp(-((x+235)**2+(z-150)**2)/(2*160**2));
     const ridge=130*Math.exp(-((x-160)**2+(z+215)**2)/(2*200**2));
     return r>=coast ? -5-Math.min(4,(r-coast)*.18) : -5+9*Math.min(1,(coast-r)/18)+inland*(24+hills+mountain+ridge);
+  };
+  // A 10-foot (3.048 m) horizontal follow view at near eye level.
+  // Reset the orbit orientation explicitly, rather than retaining a previous top-down angle.
+  const DEFAULT_CAMERA_DISTANCE=3.048;
+  const DEFAULT_CAMERA_ELEVATION=.35;
+  const setDefaultGeorgeCamera=()=>{
+    const target=george.position.clone().add(new THREE.Vector3(0,1.55,0));
+    controls.target.copy(target);
+    const heading=george.rotation.y;
+    camera.position.copy(target).add(new THREE.Vector3(
+      Math.sin(heading)*DEFAULT_CAMERA_DISTANCE,
+      DEFAULT_CAMERA_ELEVATION,
+      Math.cos(heading)*DEFAULT_CAMERA_DISTANCE
+    ));
+    camera.lookAt(target);
+    controls.update();
   };
   // Keep the viewing camera above terrain and outside hills when orbiting or zooming.
   const CAMERA_CLEARANCE=.25;
@@ -153,7 +169,13 @@ export function mountIsland(element, onTick) {
     }
     if(safeDistance<distance)camera.position.copy(target).addScaledVector(cameraRay,safeDistance);
     const surface=Math.max(-5,height(camera.position.x,camera.position.z));
-    if(camera.position.y<surface+CAMERA_CLEARANCE)camera.position.y=surface+CAMERA_CLEARANCE;
+    if(camera.position.y<surface+CAMERA_CLEARANCE){
+      // Never lift the camera vertically into a top-down view; shorten the boom instead.
+      const retreat=camera.position.clone().sub(target);
+      const factor=THREE.MathUtils.clamp((target.y-surface-CAMERA_CLEARANCE)/Math.max(.01,-retreat.y),.15,1);
+      if(retreat.y<0)camera.position.copy(target).addScaledVector(retreat,factor);
+      else camera.position.y=surface+CAMERA_CLEARANCE;
+    }
   };
   const water=mesh(new THREE.PlaneGeometry(6500,6500),0x238aab,0,-5,0,false);water.rotation.x=-Math.PI/2;
   const geo=new THREE.PlaneGeometry(1600,1600,180,180);geo.rotateX(-Math.PI/2);
@@ -506,9 +528,7 @@ export function mountIsland(element, onTick) {
     activeAction?.play();
   },undefined,error=>{console.warn('Adventurer model not available; showing temporary character.',error)});
 
-  controls.target.set(0,groundY+1.7,0);
-  camera.position.copy(controls.target).add(new THREE.Vector3(8.5,3.2,10.5));
-  controls.update();
+  setDefaultGeorgeCamera();
   // Wall-clock driven lighting: reloads and visitors share the same NZ local time.
   // Pacific/Auckland observes NZST (UTC+12) and NZDT (UTC+13) automatically.
   const nzTime=new Intl.DateTimeFormat('en-NZ',{timeZone:'Pacific/Auckland',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'});
