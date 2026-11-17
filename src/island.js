@@ -476,6 +476,34 @@ export function mountIsland(element, onTick) {
     },undefined,error=>console.warn('Island item model could not load:',file,error));
   }
   const itemUrl=import.meta.env.VITE_SUPABASE_URL,itemKey=import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+  // One persistent reddish clay outcrop, made from a compact cluster of rocks.
+  const clayRoot=new THREE.Group();scene.add(clayRoot);
+  const clayMat=new THREE.MeshStandardMaterial({color:0xa6533d,roughness:1});
+  const clayRockGeo=new THREE.DodecahedronGeometry(1,1);
+  const clayX=-330,clayZ=185;
+  [[0,0,2.2],[2.1,.7,1.4],[-1.9,.8,1.55],[.6,-1.8,1.25],[-1.4,-1.5,.95],[2.7,-1.3,.8]].forEach(([dx,dz,size],i)=>{
+    const x=clayX+dx,z=clayZ+dz;
+    const stone=new THREE.Mesh(clayRockGeo,clayMat);
+    stone.position.set(x,height(x,z)+size*.3,z);
+    stone.scale.set(size,size*.65,size*.85);
+    stone.rotation.set(.1*i,.37*i,.12*i);
+    stone.castShadow=true;stone.receiveShadow=true;clayRoot.add(stone);
+    registerObstacle(x,z,size*.7);
+  });
+  const fireRoot=new THREE.Group();scene.add(fireRoot);
+  const fireLogGeo=new THREE.CylinderGeometry(.12,.16,1.25,7);
+  const fireLogMat=new THREE.MeshStandardMaterial({color:0x59361e});
+  const flameMat=new THREE.MeshStandardMaterial({color:0xff8c24,emissive:0xf36a0c,emissiveIntensity:1.5});
+  const renderClayFires=fires=>{
+    fireRoot.clear();
+    for(const fire of fires){
+      if(!fire.lit)continue;
+      const x=Number(fire.x),z=Number(fire.z),y=height(x,z);
+      for(let i=0;i<3;i++){const log=new THREE.Mesh(fireLogGeo,fireLogMat);log.position.set(x,y+.17,z);log.rotation.set(Math.PI/2,i*Math.PI/3,0);fireRoot.add(log);}
+      const flame=new THREE.Mesh(new THREE.ConeGeometry(.32,.95,7),flameMat);
+      flame.position.set(x,y+.67,z);fireRoot.add(flame);
+    }
+  };
   const mudRoot=new THREE.Group();scene.add(mudRoot);
   const mudGeo=new THREE.BoxGeometry(.48,.25,.48);
   const mudMats={curing:new THREE.MeshStandardMaterial({color:0x694a32}),ready:new THREE.MeshStandardMaterial({color:0x986948}),placed:new THREE.MeshStandardMaterial({color:0x986948}),broken:new THREE.MeshStandardMaterial({color:0x584333})};
@@ -498,6 +526,11 @@ export function mountIsland(element, onTick) {
       .then(bricks=>{if(!itemsDisposed&&Array.isArray(bricks))renderMudBricks(bricks)})
       .catch(error=>console.warn('Mud construction refresh unavailable:',error));
     refreshMud();mudRefresh=window.setInterval(refreshMud,15000);
+    const refreshClayFires=()=>fetch(itemUrl+'/rest/v1/island_clay_fires?select=id,x,z,lit,fuel_logs',{headers:{apikey:itemKey,Authorization:'Bearer '+itemKey}})
+      .then(r=>r.ok?r.json():[]).then(fires=>{if(!itemsDisposed)renderClayFires(fires)}).catch(error=>console.warn('Clay fire refresh unavailable:',error));
+    refreshClayFires();
+    window.setInterval(refreshClayFires,15000);
+
     const refreshIslandItems=()=>fetch(itemUrl+'/rest/v1/island_items?select=id,type_id,position,state&state=in.(ground,placed)',{
       headers:{apikey:itemKey,Authorization:'Bearer '+itemKey}
     }).then(r=>{if(!r.ok)throw Error('Item query '+r.status);return r.json()})
