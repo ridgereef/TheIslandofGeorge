@@ -476,6 +476,21 @@ export function mountIsland(element, onTick, visualOptions={}) {
   const itemModels=new Map();
   let itemsDisposed=false;
   const itemBase=import.meta.env.BASE_URL||'/';
+  // Shared branch geometry avoids allocating GPU buffers on every item refresh.
+  const groundStickGeometry=new THREE.CylinderGeometry(.65,1,1,7);
+  const groundStickBark=new THREE.MeshStandardMaterial({color:0x98704a,roughness:1});
+  const groundStickEnds=new THREE.MeshStandardMaterial({color:0xd1af78,roughness:1});
+  const stickAxis=new THREE.Vector3(0,1,0);
+  const addGroundBranch=(group,ax,az,bx,bz,radius)=>{
+    const start=new THREE.Vector3(ax,height(ax,az)+radius+.025,az);
+    const end=new THREE.Vector3(bx,height(bx,bz)+radius+.025,bz);
+    const direction=end.clone().sub(start);
+    const segment=new THREE.Mesh(groundStickGeometry,[groundStickBark,groundStickEnds,groundStickEnds]);
+    segment.position.copy(start).add(end).multiplyScalar(.5);
+    segment.scale.set(radius,direction.length(),radius);
+    segment.quaternion.setFromUnitVectors(stickAxis,direction.normalize());
+    segment.castShadow=true;segment.receiveShadow=true;group.add(segment);
+  };
   const renderIslandItems=instances=>{
     if(itemsDisposed)return;
     islandItemsRoot.clear();
@@ -490,9 +505,15 @@ export function mountIsland(element, onTick, visualOptions={}) {
         continue;
       }
       if(item.type_id==='stick'){
-        const stick=new THREE.Mesh(new THREE.CylinderGeometry(.035,.055,.9,6),new THREE.MeshStandardMaterial({color:0x785337,roughness:1}));
-        stick.rotation.z=Math.PI/2;stick.rotation.y=(x*3+z)%Math.PI;
-        stick.position.set(x,height(x,z)+.075,z);stick.castShadow=true;islandItemsRoot.add(stick);continue;
+        const stick=new THREE.Group();stick.userData.itemId=item.id;stick.userData.type='stick';
+        const angle=(x*3+z)%Math.PI,ux=Math.cos(angle),uz=Math.sin(angle);
+        // Short sections follow the slope, keeping the whole branch above the soil.
+        for(let section=0;section<3;section++){
+          const a=-.7+section*(1.4/3),b=a+1.4/3;
+          addGroundBranch(stick,x+ux*a,z+uz*a,x+ux*b,z+uz*b,.075-section*.008);
+        }
+        addGroundBranch(stick,x,z,x+ux*.25-uz*.35,z+uz*.25+ux*.35,.04);
+        islandItemsRoot.add(stick);continue;
       }
       if(item.type_id==='ash'){
         const ash=new THREE.Mesh(new THREE.SphereGeometry(.4,8,5),new THREE.MeshStandardMaterial({color:0x77746c,roughness:1}));
