@@ -9,6 +9,13 @@ export function createGeorgeAnimationController(root) {
   const bindRotations = new Map([...bones].map(([name,bone])=>[name,bone.quaternion.clone()]));
   const euler = new THREE.Euler();
   const rotation = new THREE.Quaternion();
+  const DEG = Math.PI / 180;
+  // The neck and head share a single anatomical movement budget.
+  // These are conservative everyday limits, not clinical end-range maxima.
+  const HEAD_LIMITS = { yaw: 35*DEG, down: 20*DEG, up: 15*DEG };
+  const headMovement = new THREE.Quaternion();
+  const headEuler = new THREE.Euler(0,0,0,'YXZ');
+  const neckEuler = new THREE.Euler(0,0,0,'YXZ');
   let weight = 0;
   let current = 'idle';
   const clipActions = new Set(['sit','saw','pickup','putdown','carry','build','drink','eat','sleep','look','think']);
@@ -23,6 +30,27 @@ export function createGeorgeAnimationController(root) {
     neutral.copy(base).multiply(rotation);
     bone.quaternion.slerp(neutral,Math.min(1,amount));
   }
+  function aimHead(pitch=0,yaw=0,amount=weight) {
+    // No roll (Z), and no accumulation. Neck and skull together remain
+    // within the limits, even when an idle GLB clip also animates the head.
+    const safePitch=THREE.MathUtils.clamp(pitch,-HEAD_LIMITS.up,HEAD_LIMITS.down);
+    const safeYaw=THREE.MathUtils.clamp(yaw,-HEAD_LIMITS.yaw,HEAD_LIMITS.yaw);
+    const neck=bones.get('Neck'),head=bones.get('Head');
+    if(!head && !neck)return;
+    const neckBase=bindRotations.get('Neck'),headBase=bindRotations.get('Head');
+    const blend=Math.min(1,Math.max(0,amount));
+    // Apply only controlled local pitch/yaw; eliminate clip-induced roll.
+    if(neck&&neckBase){
+      neckEuler.set(safePitch*.35,safeYaw*.35,0,'YXZ');
+      headMovement.setFromEuler(neckEuler);
+      neck.quaternion.copy(neckBase).multiply(headMovement);
+    }
+    if(head&&headBase){
+      headEuler.set(safePitch*.65,safeYaw*.65,0,'YXZ');
+      headMovement.setFromEuler(headEuler);
+      head.quaternion.copy(headBase).multiply(headMovement);
+    }
+  }
   return {
     hasRig: bones.has('Hips') && bones.has('UpperArm.L'),
     update(dt, seconds, requested) {
@@ -32,6 +60,9 @@ export function createGeorgeAnimationController(root) {
         if (weight < .03) current=target;
       } else weight = Math.min(1,weight+dt*3);
       const t=seconds;
+      // Explicitly reset the skull/neck every frame, including idle and walking.
+      // This prevents an embedded animation or prior pose from leaving a swivel.
+      aimHead(0,0,weight);
       const pulse=Math.sin(t*5),slow=Math.sin(t*1.3);
       switch(current) {
         case 'sit':
@@ -39,7 +70,7 @@ export function createGeorgeAnimationController(root) {
           offset('UpperLeg.L',-.85,0,.06);offset('UpperLeg.R',-.85,0,-.06);
           offset('LowerLeg.L',1.05);offset('LowerLeg.R',1.05);
           offset('UpperArm.L',.3+.06*Math.sin(t*.8),0,-.25);offset('UpperArm.R',.3+.06*Math.sin(t*.7),0,.25);
-          offset('Head',.05*Math.sin(t*.65),.13*Math.sin(t*.45));
+          aimHead(.05*Math.sin(t*.65),.13*Math.sin(t*.45));
           break;
         case 'saw':
           offset('Spine',.2,0,.12);
@@ -70,12 +101,12 @@ export function createGeorgeAnimationController(root) {
         case 'drink':
           offset('UpperArm.R',-1.05,0,.25);
           offset('LowerArm.R',-1.5);
-          offset('Head',-.12);
+          aimHead(-.12,0);
           break;
         case 'eat':
           offset('UpperArm.L',-.9,0,-.2);
           offset('LowerArm.L',-1.45+.1*pulse);
-          offset('Head',-.08);
+          aimHead(-.08,0);
           break;
         case 'sleep':
           offset('Hips',-.1);offset('Spine',-.18);
@@ -89,12 +120,10 @@ export function createGeorgeAnimationController(root) {
           offset('LowerArm.L',-.45-.3*Math.sin(t*.9));
           offset('UpperArm.R',-.18-.35*Math.sin(t*.65+1),0,.20+.18*Math.sin(t*.9));
           offset('LowerArm.R',-.65-.3*Math.sin(t*.55+2));
-          offset('Neck',.04*Math.sin(t*.6),.18*Math.sin(t*.43));
-          offset('Head',.08*Math.sin(t*.75),.22*Math.sin(t*.45));
+          aimHead(.08*Math.sin(t*.75),.22*Math.sin(t*.45));
           break;
         case 'look':
-          offset('Neck',0,.35*slow);
-          offset('Head',.08*Math.sin(t*.7),.35*slow);
+          aimHead(.08*Math.sin(t*.7),.30*slow);
           break;
       }
       return {action:current,weight};
