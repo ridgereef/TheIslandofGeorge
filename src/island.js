@@ -451,6 +451,15 @@ export function mountIsland(element, onTick) {
         log.castShadow=true;log.receiveShadow=true;islandItemsRoot.add(log);
         continue;
       }
+      if(item.type_id==='stick'){
+        const stick=new THREE.Mesh(new THREE.CylinderGeometry(.035,.055,.9,6),new THREE.MeshStandardMaterial({color:0x785337,roughness:1}));
+        stick.rotation.z=Math.PI/2;stick.rotation.y=(x*3+z)%Math.PI;
+        stick.position.set(x,height(x,z)+.075,z);stick.castShadow=true;islandItemsRoot.add(stick);continue;
+      }
+      if(item.type_id==='ash'){
+        const ash=new THREE.Mesh(new THREE.SphereGeometry(.4,8,5),new THREE.MeshStandardMaterial({color:0x77746c,roughness:1}));
+        ash.scale.set(1,.16,.75);ash.position.set(x,height(x,z)+.045,z);islandItemsRoot.add(ash);continue;
+      }
       const template=itemModels.get(item.type_id);
       if(!template)continue;
       const model=template.clone(true);
@@ -497,7 +506,7 @@ export function mountIsland(element, onTick) {
   const renderClayFires=fires=>{
     fireRoot.clear();
     for(const fire of fires){
-      if(!fire.lit)continue;
+      if(!fire.lit){const ash=new THREE.Mesh(new THREE.SphereGeometry(.44,8,5),new THREE.MeshStandardMaterial({color:0x77746c,roughness:1}));ash.scale.set(1,.12,.8);ash.position.set(Number(fire.x),height(Number(fire.x),Number(fire.z))+.04,Number(fire.z));fireRoot.add(ash);continue;}
       const x=Number(fire.x),z=Number(fire.z),y=height(x,z);
       for(let i=0;i<3;i++){const log=new THREE.Mesh(fireLogGeo,fireLogMat);log.position.set(x,y+.17,z);log.rotation.set(Math.PI/2,i*Math.PI/3,0);fireRoot.add(log);}
       const flame=new THREE.Mesh(new THREE.ConeGeometry(.32,.95,7),flameMat);
