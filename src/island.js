@@ -587,7 +587,8 @@ export function mountIsland(element, onTick) {
     let survivalPose='idle';
     if(sitting)survivalPose='sit';
     else if(recent==='tree_cut')survivalPose='saw';
-    else if(recent==='collected_item')survivalPose='pickup';
+    else if(recent==='collected_item'||recent==='swapped_item')survivalPose='pickup';
+    else if(recent==='dropped_item')survivalPose='putdown';
     else if(recent==='stored_item')survivalPose='putdown';
     else if(recent==='shelter_built')survivalPose='build';
     else if(georgeHasLog)survivalPose='carry';
