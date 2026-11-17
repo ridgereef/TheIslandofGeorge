@@ -18,7 +18,7 @@ export function createGeorgeAnimationController(root) {
   const neckEuler = new THREE.Euler(0,0,0,'YXZ');
   let weight = 0;
   let current = 'idle';
-  const clipActions = new Set(['walk','sit','chop','saw','pickup','putdown','rummage','carry','build','drink','eat','sleep','look','think']);
+  const clipActions = new Set(['walk','sit','chop','saw','pickup','putdown','rummage','carry','build','drink','eat','sleep','fish','look','think']);
   function offset(name, x=0, y=0, z=0, amount=weight) {
     const bone = bones.get(name);
     if (!bone || amount <= 0) return;
@@ -156,6 +156,11 @@ export function createGeorgeAnimationController(root) {
           offset('UpperArm.L',-.9,0,-.2);
           offset('LowerArm.L',-1.45+.1*pulse);
           aimHead(-.08,0);
+          break;
+        case 'fish':
+          offset('UpperArm.R',-.85,0,.2);offset('LowerArm.R',-.75);
+          offset('UpperArm.L',-.45,0,-.2);offset('LowerArm.L',-.8);
+          aimHead(.1,.04*Math.sin(t*.4));
           break;
         case 'sleep':
           offset('Hips',-.1);offset('Spine',-.18);

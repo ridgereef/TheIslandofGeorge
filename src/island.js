@@ -639,6 +639,7 @@ export function mountIsland(element, onTick, visualOptions={}) {
     let hand=null;adventurer.traverse(node=>{if(node.isBone&&/^(hand\.r|righthand|hand_r|right_hand)$/i.test(node.name))hand=node});
     if(!hand)return;
     hand.add(axeGrip);axeGrip.position.set(0,-.05,.05);axeGrip.rotation.set(0,0,Math.PI/2);
+    hand.add(rodGrip);rodGrip.position.set(0,-.05,.05);rodGrip.rotation.set(.8,0,0);
     tryAxeModel(0);
   };
 
@@ -745,6 +746,19 @@ export function mountIsland(element, onTick, visualOptions={}) {
   // The shared Supabase simulation owns George's activity and position.
   // No local fatigue timer: every visitor observes the same George.
   let sharedGeorge=null;
+  const fishRoot=new THREE.Group();scene.add(fishRoot);let fishRefresh=null;
+  const rodGrip=new THREE.Group();
+  const rodShaft=new THREE.Mesh(new THREE.CylinderGeometry(.025,.045,2.8,6),new THREE.MeshStandardMaterial({color:0x624629}));
+  rodShaft.position.y=1.25;rodGrip.add(rodShaft);rodGrip.visible=false;george.add(rodGrip);rodGrip.position.set(.4,1.2,.3);rodGrip.rotation.x=.8;
+  const lineGeometry=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(),new THREE.Vector3()]);
+  const fishingLine=new THREE.Line(lineGeometry,new THREE.LineBasicMaterial({color:0xe4e1c6,transparent:true,opacity:.8}));scene.add(fishingLine);fishingLine.visible=false;
+  const bobber=new THREE.Mesh(new THREE.SphereGeometry(.22,8,6),new THREE.MeshStandardMaterial({color:0xff5f35}));scene.add(bobber);bobber.visible=false;
+  const fishShape=new THREE.SphereGeometry(.6,8,5),fishMaterial=new THREE.MeshStandardMaterial({color:0x7bb9be,roughness:.35});
+  const loadFish=()=>fetch(itemUrl+'/rest/v1/island_fish?select=id,x,z,previous_x,previous_z,available_at,updated_at',{headers:{apikey:itemKey,Authorization:'Bearer '+itemKey}})
+    .then(r=>r.ok?r.json():Promise.reject(Error('Fish sync '+r.status))).then(rows=>{if(disposed)return;for(const row of rows){
+      let model=fishRoot.children.find(m=>m.userData.id===row.id);if(!model){model=new THREE.Mesh(fishShape,fishMaterial);model.scale.set(.5,.4,1.8);model.userData.id=row.id;fishRoot.add(model)}
+      model.visible=Date.parse(row.available_at)<=Date.now();model.userData.fish=row;
+    }}).catch(error=>console.warn('Fish unavailable:',error));
   let lastSurvivalEvent=null;
   let crateInteraction=null;
   let lastCrateEventKey='';
@@ -780,14 +794,14 @@ export function mountIsland(element, onTick, visualOptions={}) {
     loadRecentEvent();
     eventRefresh=window.setInterval(loadRecentEvent,5000);
     loadSharedGeorge();
-    sharedRefresh=window.setInterval(loadSharedGeorge,5000);
+    sharedRefresh=window.setInterval(loadSharedGeorge,5000);loadFish();fishRefresh=window.setInterval(loadFish,15000);
   }
   let frame,elapsed=0,last=0,disposed=false;const clock=new THREE.Clock();const resize=()=>{const w=element.clientWidth,h=Math.max(280,element.clientHeight);renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix()};const observer=new ResizeObserver(resize);observer.observe(element);resize();
   const animate=()=>{if(disposed)return;frame=requestAnimationFrame(animate);const dt=Math.min(clock.getDelta(),.1);elapsed+=dt;adventurerMixer?.update(dt);moveUnlockedCamera(dt);const actualCycle=getDayPhase(),cycle=visualOptions.forceDaylight?.() ? .5 : actualCycle,angle=cycle*Math.PI*2;
     // Approximate daylight window 06:00–20:00 NZ local time, with smooth twilight.
     const hour=cycle*24;
     const smooth=(a,b,v)=>{const t=THREE.MathUtils.clamp((v-a)/(b-a),0,1);return t*t*(3-2*t)};
-    const daylight=Math.max(.07,smooth(5.5,7,hour)*(1-smooth(19,20.5,hour)));hemi.intensity=.4+daylight*1.7;sun.intensity=daylight*2.5;sun.position.set(Math.cos((hour-12)*Math.PI/12)*850,Math.sin((hour-6)*Math.PI/14)*950,300);scene.background.set(daylight>.3?'#87bed0':'#0a172d');scene.fog.color.copy(scene.background);flame.scale.setScalar(.9+Math.sin(elapsed*9)*.1);if(Date.now()-weatherFetchedAt>=600000)refreshWeather();const weather=liveWeather||weatherAt(new Date());weatherLabel=weather.condition;temperature=weather.temp;
+    const daylight=Math.max(.07,smooth(5.5,7,hour)*(1-smooth(19,20.5,hour)));hemi.intensity=.4+daylight*1.7;sun.intensity=daylight*2.5;sun.position.set(Math.cos((hour-12)*Math.PI/12)*850,Math.sin((hour-6)*Math.PI/14)*950,300);scene.background.set(daylight>.3?'#87bed0':'#0a172d');scene.fog.color.copy(scene.background);flame.scale.setScalar(.9+Math.sin(elapsed*9)*.1);if(Date.now()-weatherFetchedAt>=600000)refreshWeather();const sv=sharedGeorge?.inventory?.survival;const weather=sv?{temp:Number(sv.temperature),feelsLike:Number(sv.feels_like),wind:Number(sv.wind),rain:!!sv.rain,cloud:sv.rain?.85:.3,condition:sv.rain?'Rain':'Shared island weather',source:sv.weather_source}:(liveWeather||weatherAt(new Date()));weatherLabel=weather.condition;temperature=weather.temp;
     clouds.visible=weather.cloud>.2;cloudMaterial.opacity=.3+weather.cloud*.55;
     clouds.position.x=(elapsed*1.5)%120;clouds.position.z=(elapsed*.5)%80;
     rainLines.visible=weather.rain;rainLines.position.set(george.position.x,george.position.y+15,george.position.z);
@@ -796,6 +810,7 @@ export function mountIsland(element, onTick, visualOptions={}) {
     sun.intensity=daylight*2.5*(1-weather.cloud*.7);
     // George's actions come exclusively from the shared simulation. The browser is a viewer.
     const crateActive=!!crateInteraction&&performance.now()-crateInteraction.startedAt<7500;
+    const sleeping=sharedGeorge?.inventory?.activity==='sleeping';
     const resting=sharedGeorge?.inventory?.current_goal==='rest';
     const sitting=sharedGeorge?.inventory?.activity==='sitting'||resting;
     let moved=false,nextHeading=george.userData.heading??0;
@@ -889,13 +904,14 @@ export function mountIsland(element, onTick, visualOptions={}) {
     if(isChopping)survivalPose='chop';
     else if(sitting)survivalPose='sit';
     else if(recent==='tree_cut')survivalPose='saw';
-    else if(recent==='ate_apple')survivalPose='eat';
+    else if(recent==='ate_apple'||recent==='ate_fish')survivalPose='eat';
     else if(recent==='collected_item'||recent==='swapped_item')survivalPose='pickup';
     else if(recent==='dropped_item')survivalPose='putdown';
     else if(recent==='stored_item')survivalPose='putdown';
     else if(recent==='shelter_built')survivalPose='build';
     else if(georgeHasLog)survivalPose='carry';
-    else if(goal.includes('sleep'))survivalPose='sleep';
+    else if(sleeping)survivalPose='sleep';
+    else if(goal==='fish_wait')survivalPose='fish';
     else if(goal.includes('drink'))survivalPose='drink';
     else if(goal.includes('eat')||goal.includes('food'))survivalPose='eat';
     else if(goal.includes('build')||goal.includes('shelter'))survivalPose='build';
@@ -907,7 +923,15 @@ export function mountIsland(element, onTick, visualOptions={}) {
     if(desiredAction&&desiredAction!==activeAction){activeAction?.fadeOut(.25);desiredAction.reset().fadeIn(.25).play();activeAction=desiredAction;}
     // Mixer updates first, then the procedural arm/leg/head offsets layer on top.
     georgeAnimations?.update(dt,elapsed,isChopping?'chop':rummaging?'rummage':pickingUp?'pickup':moved&&!sitting&&!walkAction?'walk':moved&&!sitting?'idle':survivalPose);
-    if(adventurer){const baseline=adventurer.userData.groundOffset??0;adventurer.position.y=THREE.MathUtils.lerp(adventurer.position.y,baseline-(sitting?.55:0)-(pickingUp?.24:0)-(rummaging?.18:0),Math.min(1,dt*8));}
+    if(adventurer){const baseline=adventurer.userData.groundOffset??0;adventurer.rotation.x=THREE.MathUtils.lerp(adventurer.rotation.x,sleeping&&!moved?-Math.PI/2:0,Math.min(1,dt*5));adventurer.position.y=THREE.MathUtils.lerp(adventurer.position.y,sleeping&&!moved?.35:baseline-(sitting?.55:0)-(pickingUp?.24:0)-(rummaging?.18:0),Math.min(1,dt*8));}
+    rodGrip.visible=goal==='fish_wait'&&!moved;
+    const hook=sv?.hook;fishingLine.visible=bobber.visible=!!hook&&rodGrip.visible;
+    if(hook&&rodGrip.visible){
+      const hx=Number(hook.x),hz=Number(hook.z);george.rotation.y=Math.atan2(hx-george.position.x,hz-george.position.z);
+      bobber.position.set(hx,-4.7+Math.sin(elapsed*2)*.08,hz);
+      const tip=rodGrip.localToWorld(new THREE.Vector3(0,2.65,0));lineGeometry.setFromPoints([tip,bobber.position]);
+    }
+    for(const model of fishRoot.children){const f=model.userData.fish;if(!f)continue;const p=THREE.MathUtils.clamp((Date.now()-Date.parse(f.updated_at))/60000,0,1);model.position.set(THREE.MathUtils.lerp(Number(f.previous_x),Number(f.x),p),-4.9+Math.sin(elapsed*2+f.id)*.12,THREE.MathUtils.lerp(Number(f.previous_z),Number(f.z),p));model.rotation.y=Math.atan2(Number(f.x)-Number(f.previous_x),Number(f.z)-Number(f.previous_z));}
     if(moved&&!rummaging&&!isChopping)george.rotation.y=nextHeading;
     const solidPosition=resolveObstacleOverlap(george.position.x,george.position.z);
     george.position.x=solidPosition.x;george.position.z=solidPosition.z;
@@ -915,7 +939,7 @@ export function mountIsland(element, onTick, visualOptions={}) {
     const swimming=ground< -1;
     george.position.y=(swimming?-2.3:ground)+(moved?Math.sin(elapsed*(swimming?3:7))*(swimming?.22:.035):0);
     wetness=THREE.MathUtils.clamp(wetness+dt*((weather.rain||swimming)? .018 : -.008),0,1);
-    const feelsLike=(weather.feelsLike??(temperature+daylight*(1-weather.cloud)*3))-(wetness*5);
+    if(sv)wetness=Number(sv.wetness)/100;const feelsLike=weather.feelsLike??(temperature+daylight*(1-weather.cloud)*3)-(wetness*5);
     const thermal=feelsLike<12?'Cold':feelsLike>28?'Hot':'Comfortable';if(followGeorge){followTarget.copy(george.position).add(new THREE.Vector3(0,1.7,0));const delta=followTarget.sub(controls.target).multiplyScalar(1-Math.exp(-dt*3.5));controls.target.add(delta);camera.position.add(delta)}controls.update();constrainCamera();controls.update();renderer.render(scene,camera);if(elapsed-last>2){last=elapsed;onTick?.({daylight,phase:cycle,georgeX:george.position.x,georgeZ:george.position.z,weather:weatherLabel,temperature:Math.round(temperature),thermal,swimming,wetness:Math.round(wetness*100),weatherSource:weather.source||'Simulated fallback',wind:Math.round(weather.wind||0),freshwaterNearby:freshwaterAt(george.position.x,george.position.z),georgeMoving:moved,sitting,atCamp:Math.hypot(george.position.x,george.position.z)<9,resting:resting&&Math.hypot(george.position.x,george.position.z)<9})}};
-  animate();return ()=>{disposed=true;itemsDisposed=true;if(itemRefresh!==null)clearInterval(itemRefresh);if(cutTreeRefresh!==null)clearInterval(cutTreeRefresh);if(regrowthRefresh!==null)clearInterval(regrowthRefresh);if(carriedLogRefresh!==null)clearInterval(carriedLogRefresh);if(eventRefresh!==null)clearInterval(eventRefresh);if(sharedRefresh!==null)clearInterval(sharedRefresh);if(crateEventRefresh!==null)clearInterval(crateEventRefresh);if(cratePositionRefresh!==null)clearInterval(cratePositionRefresh);cancelAnimationFrame(frame);observer.disconnect();renderer.domElement.removeEventListener('pointerdown',onDown);window.removeEventListener('pointerup',onUp);window.removeEventListener('keydown',onKeyDown);window.removeEventListener('keyup',onKeyUp);window.removeEventListener('blur',onBlur);actions.remove();controls.dispose();renderer.dispose();renderer.domElement.remove();scene.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material){const mats=Array.isArray(o.material)?o.material:[o.material];mats.forEach(m=>m.dispose())}})};
+  animate();return ()=>{disposed=true;itemsDisposed=true;if(fishRefresh!==null)clearInterval(fishRefresh);if(itemRefresh!==null)clearInterval(itemRefresh);if(cutTreeRefresh!==null)clearInterval(cutTreeRefresh);if(regrowthRefresh!==null)clearInterval(regrowthRefresh);if(carriedLogRefresh!==null)clearInterval(carriedLogRefresh);if(eventRefresh!==null)clearInterval(eventRefresh);if(sharedRefresh!==null)clearInterval(sharedRefresh);if(crateEventRefresh!==null)clearInterval(crateEventRefresh);if(cratePositionRefresh!==null)clearInterval(cratePositionRefresh);cancelAnimationFrame(frame);observer.disconnect();renderer.domElement.removeEventListener('pointerdown',onDown);window.removeEventListener('pointerup',onUp);window.removeEventListener('keydown',onKeyDown);window.removeEventListener('keyup',onKeyUp);window.removeEventListener('blur',onBlur);actions.remove();controls.dispose();renderer.dispose();renderer.domElement.remove();scene.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material){const mats=Array.isArray(o.material)?o.material:[o.material];mats.forEach(m=>m.dispose())}})};
 }
