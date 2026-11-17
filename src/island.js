@@ -412,39 +412,25 @@ export function mountIsland(element, onTick) {
     rainLines.position.y-= (elapsed*16)%4;
     hemi.intensity=(.4+daylight*1.7)*(1-weather.cloud*.32);
     sun.intensity=daylight*2.5*(1-weather.cloud*.7);
-    // Move continuously, steering around collision footprints instead of teleporting through them.
-    george.userData.seekWater=typeof window!=='undefined'&&window.__georgeNeedsWater===true;
-    const routeAngle=elapsed*.004;
-    const routeRadius=620+95*Math.sin(elapsed*.012);
-    const seekWater=george.userData.seekWater===true;
-    const resting=typeof window!=='undefined'&&window.__georgeNeedsRest===true;
-    const destination=resting?safePosition(1,1):seekWater?safePosition(-455,100):safePosition(Math.sin(routeAngle)*routeRadius,Math.cos(routeAngle)*routeRadius);
+    // George's actions come exclusively from the shared simulation. The browser is a viewer.
     const sitting=sharedGeorge?.inventory?.activity==='sitting';
-    const dx=destination.x-george.position.x,dz=destination.z-george.position.z;
-    const desired=Math.atan2(dx,dz),speed=3.1*dt;
-    const currentHeading=george.userData.heading??desired;
-    let moved=false,nextHeading=currentHeading;
-    // Search progressively wider steering angles; every candidate is swept to prevent tunnelling.
-    const offsets=[0,.3,-.3,.6,-.6,1,-1,1.5,-1.5,2,-2,Math.PI];
-    const sweepClear=(heading)=>{
-      const stepX=Math.sin(heading)*speed,stepZ=Math.cos(heading)*speed;
-      const segments=Math.max(1,Math.ceil(speed/.25));
-      for(let j=1;j<=segments;j++){
-        const p=safePosition(george.position.x+stepX*j/segments,george.position.z+stepZ*j/segments);
-        if(p.limited||!clearForGeorge(p.x,p.z))return false;
-      }
-      return true;
-    };
-    if(!sharedGeorge&&!sitting&&Math.hypot(dx,dz)>.5){
-      for(const offset of offsets){
-        const heading=desired+offset;
-        if(!sweepClear(heading))continue;
-        george.position.x+=Math.sin(heading)*speed;
-        george.position.z+=Math.cos(heading)*speed;
-        nextHeading=heading;moved=true;break;
+    const resting=sharedGeorge?.inventory?.current_goal==='rest';
+    let moved=false,nextHeading=george.userData.heading??0;
+    if(sharedGeorge?.position){
+      const x=Number(sharedGeorge.position.x),z=Number(sharedGeorge.position.z);
+      if(Number.isFinite(x)&&Number.isFinite(z)){
+        const px=george.position.x,pz=george.position.z;
+        const delta=Math.hypot(x-px,z-pz);
+        // On first sync or after a large change, snap to the authoritative position.
+        if(!george.userData.hasSynced||delta>35){george.position.x=x;george.position.z=z;george.userData.hasSynced=true;}
+        else if(!sitting&&delta>.02){
+          const amount=Math.min(delta,2*Math.min(1,dt*2));
+          george.position.x+=((x-px)/delta)*amount;
+          george.position.z+=((z-pz)/delta)*amount;
+          moved=true;nextHeading=Math.atan2(x-px,z-pz);
+        }
       }
     }
-    if(sharedGeorge?.position){const x=Number(sharedGeorge.position.x),z=Number(sharedGeorge.position.z);if(Number.isFinite(x)&&Number.isFinite(z)){const px=george.position.x,pz=george.position.z;george.position.x=THREE.MathUtils.lerp(px,x,Math.min(1,dt*2));george.position.z=THREE.MathUtils.lerp(pz,z,Math.min(1,dt*2));moved=!sitting&&Math.hypot(george.position.x-px,george.position.z-pz)>.002;if(moved)nextHeading=Math.atan2(x-px,z-pz);}}
     george.userData.wasMoving=moved;
     george.userData.heading=nextHeading;
     const desiredAction=moved?walkAction:idleAction;
@@ -453,7 +439,7 @@ export function mountIsland(element, onTick) {
     if(moved)george.rotation.y=nextHeading;
     const ground=height(george.position.x,george.position.z);
     const swimming=ground< -1;
-    george.position.y=(swimming?-2.3:ground)+Math.sin(elapsed*(swimming?3:7))*(swimming?.22:.035);
+    george.position.y=(swimming?-2.3:ground)+(moved?Math.sin(elapsed*(swimming?3:7))*(swimming?.22:.035):0);
     wetness=THREE.MathUtils.clamp(wetness+dt*((weather.rain||swimming)? .018 : -.008),0,1);
     const feelsLike=(weather.feelsLike??(temperature+daylight*(1-weather.cloud)*3))-(wetness*5);
     const thermal=feelsLike<12?'Cold':feelsLike>28?'Hot':'Comfortable';if(followGeorge){followTarget.copy(george.position).add(new THREE.Vector3(0,1.7,0));const delta=followTarget.sub(controls.target).multiplyScalar(1-Math.exp(-dt*3.5));controls.target.add(delta);camera.position.add(delta)}controls.update();constrainCamera();controls.update();renderer.render(scene,camera);if(elapsed-last>2){last=elapsed;onTick?.({daylight,phase:cycle,georgeX:george.position.x,georgeZ:george.position.z,weather:weatherLabel,temperature:Math.round(temperature),thermal,swimming,wetness:Math.round(wetness*100),weatherSource:weather.source||'Simulated fallback',wind:Math.round(weather.wind||0),freshwaterNearby:freshwaterAt(george.position.x,george.position.z),georgeMoving:moved,sitting,atCamp:Math.hypot(george.position.x,george.position.z)<9,resting:resting&&Math.hypot(george.position.x,george.position.z)<9})}};
