@@ -219,6 +219,7 @@ export function mountIsland(element, onTick) {
   const trunkMat=new THREE.MeshStandardMaterial({color:'#674b32'}),leafMat=new THREE.MeshStandardMaterial({color:'#326b3c'});
   // Shared collision footprints for the visible instanced trees and rocks.
   const obstacles=[],obstacleGrid=new Map(),CELL=20;
+  const treeObstacles=[],forestObstacles=[];
   const gridKey=(x,z)=>Math.floor(x/CELL)+','+Math.floor(z/CELL);
   const registerObstacle=(x,z,radius)=>{
     const obstacle={x,z,radius};obstacles.push(obstacle);
@@ -229,8 +230,9 @@ export function mountIsland(element, onTick) {
       if(!obstacleGrid.has(key))obstacleGrid.set(key,[]);
       obstacleGrid.get(key).push(obstacle);
     }
+    return obstacle;
   };
-  const nearbyObstacles=(x,z)=>obstacleGrid.get(gridKey(x,z))||[];
+  const nearbyObstacles=(x,z)=>[...(obstacleGrid.get(gridKey(x,z))||[]),...forestObstacles.filter(o=>Math.abs(o.x-x)<12&&Math.abs(o.z-z)<12)];
   const clearForGeorge=(x,z)=>{
     for(const o of nearbyObstacles(x,z)){
       const r=o.radius+.48;
@@ -278,7 +280,7 @@ export function mountIsland(element, onTick) {
   };
   const count=1700,trunks=new THREE.InstancedMesh(trunkGeo,trunkMat,count),leaves=new THREE.InstancedMesh(leafGeo,leafMat,count),dummy=new THREE.Object3D();
   for(let i=0;i<count;i++){const angle=rand(i+20)*Math.PI*2,r=Math.sqrt(rand(i+400))*620,x=Math.cos(angle)*r,z=Math.sin(angle)*r,y=height(x,z),scale=.7+rand(i+900)*1.1;
-    if(Math.hypot(x,z)<24){dummy.position.set(0,-1000,0);dummy.scale.set(0,0,0);dummy.updateMatrix();trunks.setMatrixAt(i,dummy.matrix);leaves.setMatrixAt(i,dummy.matrix);continue;}registerObstacle(x,z,1.4*scale);dummy.position.set(x,y+5*scale,z);dummy.scale.set(scale,scale,scale);dummy.rotation.set(0,rand(i+1300)*6.28,0);dummy.updateMatrix();trunks.setMatrixAt(i,dummy.matrix);
+    if(Math.hypot(x,z)<24){dummy.position.set(0,-1000,0);dummy.scale.set(0,0,0);dummy.updateMatrix();trunks.setMatrixAt(i,dummy.matrix);leaves.setMatrixAt(i,dummy.matrix);continue;}treeObstacles.push(registerObstacle(x,z,1.4*scale));dummy.position.set(x,y+5*scale,z);dummy.scale.set(scale,scale,scale);dummy.rotation.set(0,rand(i+1300)*6.28,0);dummy.updateMatrix();trunks.setMatrixAt(i,dummy.matrix);
     dummy.position.set(x,y+20*scale,z);dummy.updateMatrix();leaves.setMatrixAt(i,dummy.matrix);
   }
   trunks.instanceMatrix.needsUpdate=true;leaves.instanceMatrix.needsUpdate=true;scene.add(trunks,leaves);
@@ -407,13 +409,14 @@ export function mountIsland(element, onTick) {
   const stumpRoot=new THREE.Group();scene.add(stumpRoot);
   const cutLocations=[];
   const markCutTrees=events=>{
-    stumpRoot.clear();cutLocations.length=0;
+    stumpRoot.clear();cutLocations.length=0;forestObstacles.length=0;
     for(const event of events){
       const p=event.details?.position;
       if(!p)continue;
       const x=Number(p.x),z=Number(p.z);
       if(!Number.isFinite(x)||!Number.isFinite(z))continue;
       cutLocations.push({x,z});
+      forestObstacles.push({x,z,radius:.85});
       const stump=new THREE.Mesh(stumpGeo,stumpMat);
       stump.position.set(x,height(x,z)+.35,z);
       stump.castShadow=true;stump.receiveShadow=true;stumpRoot.add(stump);
@@ -430,9 +433,14 @@ export function mountIsland(element, onTick) {
       if(best>=0)hidden.add(best);
     }
     const transform=new THREE.Matrix4().makeScale(0,0,0);
+    treeObstacles.forEach((o,i)=>{if(o)o.radius=hidden.has(i)?0:o.radius});
     for(const i of hidden){trunks.setMatrixAt(i,transform);leaves.setMatrixAt(i,transform)}
     trunks.instanceMatrix.needsUpdate=true;leaves.instanceMatrix.needsUpdate=true;
   };
+  const regrowthRoot=new THREE.Group();scene.add(regrowthRoot);
+  const seedlingTrunk=new THREE.CylinderGeometry(.16,.2,2,6),seedlingLeaf=new THREE.ConeGeometry(1.25,4,7);
+  const seedlingBark=new THREE.MeshStandardMaterial({color:0x715038}),seedlingGreen=new THREE.MeshStandardMaterial({color:0x397f45});
+  const renderRegrowth=trees=>{regrowthRoot.clear();for(const tree of trees){const x=Number(tree.x),z=Number(tree.z),growth=Math.max(0,Math.min(1,Number(tree.growth)));if(!Number.isFinite(x)||!Number.isFinite(z)||height(x,z)<=0)continue;const group=new THREE.Group(),scale=.12+.88*growth;const trunk=new THREE.Mesh(seedlingTrunk,seedlingBark),crown=new THREE.Mesh(seedlingLeaf,seedlingGreen);trunk.position.y=1;crown.position.y=3.3;group.add(trunk,crown);group.scale.setScalar(scale);group.position.set(x,height(x,z),z);regrowthRoot.add(group);if(growth>.4)forestObstacles.push({x,z,radius:1.4*growth})}};
   const islandItemsRoot=new THREE.Group();scene.add(islandItemsRoot);
   const itemLoader=new GLTFLoader();
   const itemModels=new Map();
@@ -528,7 +536,7 @@ export function mountIsland(element, onTick) {
     }
   };
   let mudRefresh=null,clayFireRefresh=null;
-  let itemRefresh=null,cutTreeRefresh=null,carriedLogRefresh=null,eventRefresh=null,georgeHasLog=false;
+  let itemRefresh=null,cutTreeRefresh=null,carriedLogRefresh=null,eventRefresh=null,regrowthRefresh=null,georgeHasLog=false;
   if(itemUrl&&itemKey){
     const refreshMud=()=>fetch(itemUrl+'/rest/v1/island_mud_construction?select=id,status,x,z,level,site_x,site_z,structure_status&limit=500',{headers:{apikey:itemKey,Authorization:'Bearer '+itemKey}})
       .then(r=>{if(!r.ok)throw Error('Mud construction '+r.status);return r.json()})
@@ -545,11 +553,14 @@ export function mountIsland(element, onTick) {
     }).then(r=>{if(!r.ok)throw Error('Item query '+r.status);return r.json()})
       .then(items=>{if(!itemsDisposed&&Array.isArray(items)){currentItems=items;renderIslandItems(currentItems)}})
       .catch(error=>console.warn('Island item refresh unavailable:',error));
-    const refreshCutTrees=()=>fetch(itemUrl+'/rest/v1/island_item_events?select=id,details&event_type=eq.tree_cut&order=id.asc&limit=500',{
-      headers:{apikey:itemKey,Authorization:'Bearer '+itemKey}
-    }).then(r=>{if(!r.ok)throw Error('Cut-tree query '+r.status);return r.json()})
-      .then(events=>{if(!itemsDisposed&&Array.isArray(events))markCutTrees(events)})
-      .catch(error=>console.warn('Cut-tree locations unavailable:',error));
+    const refreshCutTrees=()=>fetch(itemUrl+'/rest/v1/george_forest_stumps?select=event_id,x,z,cut_minute&limit=500',{headers:{apikey:itemKey,Authorization:'Bearer '+itemKey}})
+      .then(r=>r.ok?r.json():Promise.reject(Error('Forest stumps '+r.status)))
+      .then(rows=>{if(!itemsDisposed&&Array.isArray(rows))markCutTrees(rows.map(row=>({details:{position:{x:row.x,z:row.z}}})))})
+      .catch(error=>console.warn('Forest stump locations unavailable:',error));
+    const refreshRegrowth=()=>fetch(itemUrl+'/rest/v1/george_forest_growth?select=id,x,z,growth&limit=1000',{headers:{apikey:itemKey,Authorization:'Bearer '+itemKey}})
+      .then(r=>r.ok?r.json():Promise.reject(Error('Forest regrowth '+r.status)))
+      .then(rows=>{if(!itemsDisposed&&Array.isArray(rows))renderRegrowth(rows)})
+      .catch(error=>console.warn('Forest regrowth unavailable:',error));
     const refreshCarriedLog=()=>fetch(itemUrl+'/rest/v1/island_items?select=id&type_id=eq.log&owner=eq.george&state=eq.inventory&limit=1',{
       headers:{apikey:itemKey,Authorization:'Bearer '+itemKey}
     }).then(r=>r.ok?r.json():Promise.reject(Error('Carried log query '+r.status)))
@@ -557,7 +568,7 @@ export function mountIsland(element, onTick) {
       .catch(error=>console.warn('Carried log status unavailable:',error));
     refreshCarriedLog();
     carriedLogRefresh=window.setInterval(refreshCarriedLog,5000);
-    refreshCutTrees();
+    refreshCutTrees();refreshRegrowth();regrowthRefresh=window.setInterval(refreshRegrowth,30000);
     cutTreeRefresh=window.setInterval(refreshCutTrees,30000);
     refreshIslandItems();
     itemRefresh=window.setInterval(refreshIslandItems,15000);
@@ -815,5 +826,5 @@ export function mountIsland(element, onTick) {
     wetness=THREE.MathUtils.clamp(wetness+dt*((weather.rain||swimming)? .018 : -.008),0,1);
     const feelsLike=(weather.feelsLike??(temperature+daylight*(1-weather.cloud)*3))-(wetness*5);
     const thermal=feelsLike<12?'Cold':feelsLike>28?'Hot':'Comfortable';if(followGeorge){followTarget.copy(george.position).add(new THREE.Vector3(0,1.7,0));const delta=followTarget.sub(controls.target).multiplyScalar(1-Math.exp(-dt*3.5));controls.target.add(delta);camera.position.add(delta)}controls.update();constrainCamera();controls.update();renderer.render(scene,camera);if(elapsed-last>2){last=elapsed;onTick?.({daylight,phase:cycle,georgeX:george.position.x,georgeZ:george.position.z,weather:weatherLabel,temperature:Math.round(temperature),thermal,swimming,wetness:Math.round(wetness*100),weatherSource:weather.source||'Simulated fallback',wind:Math.round(weather.wind||0),freshwaterNearby:freshwaterAt(george.position.x,george.position.z),georgeMoving:moved,sitting,atCamp:Math.hypot(george.position.x,george.position.z)<9,resting:resting&&Math.hypot(george.position.x,george.position.z)<9})}};
-  animate();return ()=>{disposed=true;itemsDisposed=true;if(itemRefresh!==null)clearInterval(itemRefresh);if(cutTreeRefresh!==null)clearInterval(cutTreeRefresh);if(carriedLogRefresh!==null)clearInterval(carriedLogRefresh);if(eventRefresh!==null)clearInterval(eventRefresh);if(sharedRefresh!==null)clearInterval(sharedRefresh);if(crateEventRefresh!==null)clearInterval(crateEventRefresh);if(cratePositionRefresh!==null)clearInterval(cratePositionRefresh);cancelAnimationFrame(frame);observer.disconnect();renderer.domElement.removeEventListener('pointerdown',onDown);window.removeEventListener('pointerup',onUp);window.removeEventListener('keydown',onKeyDown);window.removeEventListener('keyup',onKeyUp);window.removeEventListener('blur',onBlur);actions.remove();controls.dispose();renderer.dispose();renderer.domElement.remove();scene.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material){const mats=Array.isArray(o.material)?o.material:[o.material];mats.forEach(m=>m.dispose())}})};
+  animate();return ()=>{disposed=true;itemsDisposed=true;if(itemRefresh!==null)clearInterval(itemRefresh);if(cutTreeRefresh!==null)clearInterval(cutTreeRefresh);if(regrowthRefresh!==null)clearInterval(regrowthRefresh);if(carriedLogRefresh!==null)clearInterval(carriedLogRefresh);if(eventRefresh!==null)clearInterval(eventRefresh);if(sharedRefresh!==null)clearInterval(sharedRefresh);if(crateEventRefresh!==null)clearInterval(crateEventRefresh);if(cratePositionRefresh!==null)clearInterval(cratePositionRefresh);cancelAnimationFrame(frame);observer.disconnect();renderer.domElement.removeEventListener('pointerdown',onDown);window.removeEventListener('pointerup',onUp);window.removeEventListener('keydown',onKeyDown);window.removeEventListener('keyup',onKeyUp);window.removeEventListener('blur',onBlur);actions.remove();controls.dispose();renderer.dispose();renderer.domElement.remove();scene.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material){const mats=Array.isArray(o.material)?o.material:[o.material];mats.forEach(m=>m.dispose())}})};
 }
