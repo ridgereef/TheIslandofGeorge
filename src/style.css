@@ -10,3 +10,23 @@
 .journal-scroll .entry:first-child{padding-top:14px}
 .journal-scroll .entry:last-child{border-bottom:0}
 @media(max-width:600px){.journal-scroll{max-height:340px}}
+
+/* Light website theme — keep the 3D island scene and its camera HUD unchanged. */
+:root{color:#182b32;background:#fff;color-scheme:light}
+body,.shell{background:#fff;color:#182b32}
+.topbar{background:#fff;border-bottom:1px solid #dce5e7}
+.brand h1,.scene-footer h2,.panel h2,.entry h3,.section-title{color:#182b32}
+.mark{background:#e9f5ed;border-color:#a6c6b1;color:#25654a}
+.eyebrow{color:#34765e}.status{color:#536970}.separator{color:#9aadb1}
+.scene-panel,.panel{background:#fff;border:1px solid #dce5e7;box-shadow:0 8px 26px #102c3910}
+.scene-footer{background:#fff}
+.scene-footer p,.muted,.empty p,.about p,.entry p,.thought-disclaimer{color:#536970}
+.tag{background:#eaf6ee;border-color:#c2dfce;color:#286b4a}
+.meter-label,.meter-label strong,.mood,.thought-text{color:#263e44}
+.track{background:#e5edef}.mood,.tabs,.entry{border-color:#e2e9eb}
+.mood span{color:#82989d}
+.tabs button{color:#5d737a}.tabs button.active{color:#176b4a;border-bottom-color:#319669}
+.empty,.empty h3,.empty .book{color:#405e60}
+footer{color:#647a80}
+.journal-scroll{scrollbar-color:#b5cfca #f0f5f4}
+.journal-scroll:focus-visible{outline-color:#319669}
