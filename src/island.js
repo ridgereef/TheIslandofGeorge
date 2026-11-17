@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { createGeorgeAnimationController } from './georgeAnimations.js';
-export function mountIsland(element, onTick) {
+export function mountIsland(element, onTick, visualOptions={}) {
   const scene=new THREE.Scene(); scene.background=new THREE.Color('#87bed0'); scene.fog=new THREE.Fog('#87bed0',1100,3200);
   const camera=new THREE.PerspectiveCamera(58,1,.1,5000); camera.position.set(15,12,22); camera.lookAt(0,3,0);
   const renderer=new THREE.WebGLRenderer({antialias:true,alpha:false}); renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2)); renderer.shadowMap.enabled=true; renderer.outputColorSpace=THREE.SRGBColorSpace; element.appendChild(renderer.domElement);
@@ -752,7 +752,7 @@ export function mountIsland(element, onTick) {
     sharedRefresh=window.setInterval(loadSharedGeorge,5000);
   }
   let frame,elapsed=0,last=0,disposed=false;const clock=new THREE.Clock();const resize=()=>{const w=element.clientWidth,h=Math.max(280,element.clientHeight);renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix()};const observer=new ResizeObserver(resize);observer.observe(element);resize();
-  const animate=()=>{if(disposed)return;frame=requestAnimationFrame(animate);const dt=Math.min(clock.getDelta(),.1);elapsed+=dt;adventurerMixer?.update(dt);moveUnlockedCamera(dt);const cycle=getDayPhase(),angle=cycle*Math.PI*2;
+  const animate=()=>{if(disposed)return;frame=requestAnimationFrame(animate);const dt=Math.min(clock.getDelta(),.1);elapsed+=dt;adventurerMixer?.update(dt);moveUnlockedCamera(dt);const actualCycle=getDayPhase(),cycle=visualOptions.forceDaylight?.() ? .5 : actualCycle,angle=cycle*Math.PI*2;
     // Approximate daylight window 06:00–20:00 NZ local time, with smooth twilight.
     const hour=cycle*24;
     const smooth=(a,b,v)=>{const t=THREE.MathUtils.clamp((v-a)/(b-a),0,1);return t*t*(3-2*t)};
