@@ -871,7 +871,9 @@ export function mountIsland(element, onTick, visualOptions={}) {
     tryAxeModel(0);
   };
 
+  visualOptions.onAnimationStatus?.('Loading George 3D model…');
   loader.load('/models/Adventurer.glb',gltf=>{
+    try {
     if(disposed)return;
     adventurer=gltf.scene;
     const bounds=new THREE.Box3().setFromObject(adventurer);
@@ -911,7 +913,13 @@ export function mountIsland(element, onTick, visualOptions={}) {
     if(idle)idleAction=adventurerMixer.clipAction(idle);
     activeAction=walkAction||idleAction;
     activeAction?.play();
-  },undefined,error=>{console.warn('Adventurer model not available; showing temporary character.',error);visualOptions.onAnimationStatus?.('Adventurer model failed to load — animation unavailable')});
+    visualOptions.onAnimationStatus?.('George 3D model loaded — animation controller ready');
+    } catch(error) {
+      console.error('George model initialization failed',error);
+      visualOptions.onAnimationStatus?.('3D model initialization error: '+(error?.message||String(error)));
+      // Preserve the real model if it loaded; do not silently leave only the placeholder.
+    }
+  },undefined,error=>{console.warn('Adventurer model not available; showing temporary character.',error);visualOptions.onAnimationStatus?.('3D model download failed: '+(error?.message||String(error)))});
 
   setDefaultGeorgeCamera();
   // Wall-clock driven lighting: reloads and visitors share the same NZ local time.
