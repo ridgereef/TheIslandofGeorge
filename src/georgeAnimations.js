@@ -285,7 +285,10 @@ export function createGeorgeAnimationController(root) {
             // Clamp the target to the forearm's reachable sphere.
             const wristGoal=temple.clone().sub(currentElbow).clampLength(.03,lowerLength*.98).add(currentElbow);
             pointBone(elbow,currentWrist.sub(currentElbow),wristGoal.sub(currentElbow),touch);
-            limitJoint('UpperArm.R');limitJoint('LowerArm.R');
+            // Joint limits here were defined for assumed Blender local axes and
+            // were cancelling the world-space reach on this Adventurer rig.
+            // Keep the target anatomical: elbow out/front, wrist near temple.
+            // Avoid applying the mismatched Euler-axis limiter to this gesture.
           }
           aimHead(.025*touch,-.025*touch);
           break;
