@@ -829,12 +829,12 @@ export function mountIsland(element, onTick, visualOptions={}) {
       if(george.position.y<=floor){p.velocityY=0;p.mode='down';}
       p.leanVelocity+=(Math.PI*.5-p.lean)*20*dt-p.leanVelocity*7*dt;
       p.lean=THREE.MathUtils.clamp(p.lean+p.leanVelocity*dt,0,Math.PI*.5);
-      if(p.mode==='down'&&p.fallTime>2.2&&!sleeping){p.mode='recovering';p.recovery=0;}
+      if(p.mode==='down'&&p.fallTime>2.2&&!sleeping){p.mode='recovering';p.recovery=0;visualOptions.onAnimationStatus?.('George is pushing up with his arms and knees');}
     }else if(p.mode==='recovering'){
-      p.recovery+=dt;p.lean=Math.max(0,p.lean-dt*1.3);
-      if(p.lean<.02){p.lean=0;p.mode='upright';p.velocityY=0;ragdollParticles.clear();}
+      p.recovery+=dt;const phase=THREE.MathUtils.clamp(p.recovery/2.4,0,1);p.lean=Math.PI*.5*(1-THREE.MathUtils.smoothstep(phase,.18,.95));
+      if(p.recovery>=2.4){p.lean=0;p.mode='upright';p.velocityY=0;ragdollParticles.clear();visualOptions.onAnimationStatus?.('Recovery complete — George is standing');}
     }else p.lean=THREE.MathUtils.damp(p.lean,0,8,dt);
-    if(active&&ragdollParticles.size)simulateRagdoll(dt);
+    if((p.mode==='falling'||p.mode==='down')&&ragdollParticles.size)simulateRagdoll(dt);
     adventurer.rotation.x=THREE.MathUtils.damp(adventurer.rotation.x,-p.lean,9,dt);
     return active;
   };
@@ -1191,7 +1191,7 @@ export function mountIsland(element, onTick, visualOptions={}) {
       }
       georgeAnimations.setIKTargets(targets);
     }
-    if(manualAnimation&&performance.now()>manualUntil){manualAnimation=null;visualOptions.onAnimationStatus?.('Animation complete — autonomous movement resumed');}if(!manualAnimation&&bodyPhysics.mode==='upright'&&performance.now()>nextGesture){nextGesture=performance.now()+(12+Math.random()*16)*60000;if(!isChopping&&!fighting&&!frightened&&!rummaging&&!pickingUp&&!swimming){manualAnimation=temperature>24&&Math.random()<.75?'wipe_brow':'scratch_head';manualUntil=performance.now()+1800;}}const motorAction=manualAnimation&&bodyPhysics.mode==='upright'?manualAnimation:bodyPhysics.mode!=='upright'?'idle':isChopping?'chop':fighting?'fight_stance':frightened?'fear_run':rummaging?'rummage':pickingUp?'pickup':moved&&!sitting?'walk':survivalPose;
+    if(manualAnimation&&performance.now()>manualUntil){manualAnimation=null;visualOptions.onAnimationStatus?.('Animation complete — autonomous movement resumed');}if(!manualAnimation&&bodyPhysics.mode==='upright'&&performance.now()>nextGesture){nextGesture=performance.now()+(12+Math.random()*16)*60000;if(!isChopping&&!fighting&&!frightened&&!rummaging&&!pickingUp&&!swimming){manualAnimation=temperature>24&&Math.random()<.75?'wipe_brow':'scratch_head';manualUntil=performance.now()+1800;}}const motorAction=bodyPhysics.mode==='recovering'?'get_up':manualAnimation&&bodyPhysics.mode==='upright'?manualAnimation:bodyPhysics.mode!=='upright'?'idle':isChopping?'chop':fighting?'fight_stance':frightened?'fear_run':rummaging?'rummage':pickingUp?'pickup':moved&&!sitting?'walk':survivalPose;
     // Evaluate the axe's actual head-to-trunk distance only near the strike phase.
     // This is animation feedback; authoritative tree damage remains server controlled.
     let axeError=null;
@@ -1208,7 +1208,7 @@ export function mountIsland(element, onTick, visualOptions={}) {
         }
       }
     }
-    const motorFrame=georgeAnimations?.update(dt,manualAnimation?(performance.now()-manualStarted)/1000:elapsed,motorAction);
+    const motorFrame=georgeAnimations?.update(dt,bodyPhysics.mode==='recovering'?bodyPhysics.recovery:manualAnimation?(performance.now()-manualStarted)/1000:elapsed,motorAction);
     if(motorFrame?.feedback){
       const f=motorFrame.feedback;
       const errors=motorAction==='pickup'?[f.leftHandError,f.rightHandError]:motorAction==='walk'||motorAction==='fear_run'?[f.leftFootError,f.rightFootError]:motorAction==='chop'?[axeError]:[];
