@@ -736,7 +736,7 @@ export function mountIsland(element, onTick, visualOptions={}) {
   let adventurer=null,adventurerMixer=null,walkAction=null,idleAction=null,activeAction=null,georgeAnimations=null;
   // Lightweight active ragdoll: gravity-driven centre of mass, spring/damped
   // torso rotation and independently settling limbs. No external physics engine.
-  let manualAnimation=null;let manualUntil=0;let nextGesture=performance.now()+ (12+Math.random()*16)*60000;const triggerManualAnimation=(action)=>{if(!['scratch_head','wipe_brow','knock_down','walk','fear_run','pickup','chop'].includes(action))return false;if(action==='knock_down'){if(!adventurer||bodyPhysics.mode!=='upright')return false;bodyPhysics.manualFall=true;manualAnimation=null;return true;}manualAnimation=action;manualUntil=performance.now()+ (action==='chop'?2600:action==='walk'||action==='fear_run'?3200:action==='pickup'?2200:1900);return true;};window.__georgeManualAnimation=triggerManualAnimation;const bodyPhysics={massKg:78,gravity:9.81,centreHeight:1.15,velocityY:0,lean:0,leanVelocity:0,fallTime:0,recovery:0,mode:'upright',previousX:null,previousZ:null};
+  let manualAnimation=null;let manualUntil=0;let manualStarted=0;let nextGesture=performance.now()+ (12+Math.random()*16)*60000;const triggerManualAnimation=(action)=>{if(!['scratch_head','wipe_brow','knock_down','walk','fear_run','pickup','chop'].includes(action))return false;if(action==='knock_down'){if(!adventurer||bodyPhysics.mode!=='upright')return false;bodyPhysics.manualFall=true;manualAnimation=null;return true;}manualAnimation=action;manualStarted=performance.now();manualUntil=performance.now()+ (action==='chop'?2600:action==='walk'||action==='fear_run'?3200:action==='pickup'?2200:1900);return true;};window.__georgeManualAnimation=triggerManualAnimation;const bodyPhysics={massKg:78,gravity:9.81,centreHeight:1.15,velocityY:0,lean:0,leanVelocity:0,fallTime:0,recovery:0,mode:'upright',previousX:null,previousZ:null};
   // Articulated particle ragdoll. Each anatomical segment has a mass,
   // Verlet momentum, a distance joint and a terrain collision radius.
   // The skeleton drives the visible GLB through constrained local rotations.
@@ -835,7 +835,7 @@ export function mountIsland(element, onTick, visualOptions={}) {
       if(p.lean<.02){p.lean=0;p.mode='upright';p.velocityY=0;ragdollParticles.clear();}
     }else p.lean=THREE.MathUtils.damp(p.lean,0,8,dt);
     if(active&&ragdollParticles.size)simulateRagdoll(dt);
-    adventurer.rotation.z=THREE.MathUtils.damp(adventurer.rotation.z,p.lean,9,dt);
+    adventurer.rotation.x=THREE.MathUtils.damp(adventurer.rotation.x,-p.lean,9,dt);
     return active;
   };
   const loader=new GLTFLoader();
@@ -1125,7 +1125,7 @@ export function mountIsland(element, onTick, visualOptions={}) {
     }
     const chopping=sharedGeorge?.inventory?.chopping;
     const isChopping=!!chopping;
-    axeGrip.visible=isChopping;
+    axeGrip.visible=isChopping||manualAnimation==='chop';
     if(isChopping){
       const tx=Number(chopping.x),tz=Number(chopping.z);
       if(Number.isFinite(tx)&&Number.isFinite(tz)){
@@ -1164,7 +1164,7 @@ export function mountIsland(element, onTick, visualOptions={}) {
     else if(goal.includes('investigate'))survivalPose='look';
     else if(!moved)survivalPose='think';
     // Do not infer an eating/drinking animation merely from low needs: wait for an actual action.
-    const desiredAction=moved&&!sitting&&!pickingUp&&!rummaging&&!isChopping?walkAction:idleAction;
+    const desiredAction=manualAnimation?idleAction:moved&&!sitting&&!pickingUp&&!rummaging&&!isChopping?walkAction:idleAction;
     if(desiredAction&&desiredAction!==activeAction){activeAction?.fadeOut(.25);desiredAction.reset().fadeIn(.25).play();activeAction=desiredAction;}
     // Mixer updates first, then the procedural arm/leg/head offsets layer on top.
     // Generate physically grounded end-effector targets in world coordinates.
@@ -1208,7 +1208,7 @@ export function mountIsland(element, onTick, visualOptions={}) {
         }
       }
     }
-    const motorFrame=georgeAnimations?.update(dt,elapsed,motorAction);
+    const motorFrame=georgeAnimations?.update(dt,manualAnimation?(performance.now()-manualStarted)/1000:elapsed,motorAction);
     if(motorFrame?.feedback){
       const f=motorFrame.feedback;
       const errors=motorAction==='pickup'?[f.leftHandError,f.rightHandError]:motorAction==='walk'||motorAction==='fear_run'?[f.leftFootError,f.rightFootError]:motorAction==='chop'?[axeError]:[];
@@ -1227,7 +1227,7 @@ export function mountIsland(element, onTick, visualOptions={}) {
         if(s.n>=10)void uploadMotorFeedback();
       }
     }
-    if(adventurer){const baseline=adventurer.userData.groundOffset??0;adventurer.rotation.x=THREE.MathUtils.lerp(adventurer.rotation.x,sleeping&&!moved?-Math.PI/2:0,Math.min(1,dt*5));adventurer.position.y=THREE.MathUtils.lerp(adventurer.position.y,sleeping&&!moved?.35:baseline-(sitting?.55:0)-(pickingUp?.24:0)-(rummaging?.18:0),Math.min(1,dt*8));}
+    if(adventurer){const baseline=adventurer.userData.groundOffset??0;if(bodyPhysics.mode==='upright')adventurer.rotation.x=THREE.MathUtils.lerp(adventurer.rotation.x,sleeping&&!moved?-Math.PI/2:0,Math.min(1,dt*5));adventurer.position.y=THREE.MathUtils.lerp(adventurer.position.y,sleeping&&!moved?.35:baseline-(sitting?.55:0)-(pickingUp?.24:0)-(rummaging?.18:0),Math.min(1,dt*8));}
     rodGrip.visible=goal==='fish_wait'&&!moved;
     const hook=sv?.hook;fishingLine.visible=bobber.visible=!!hook&&rodGrip.visible;
     if(hook&&rodGrip.visible){
