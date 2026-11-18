@@ -1036,6 +1036,30 @@ export function mountIsland(element, onTick, visualOptions={}) {
     const desiredAction=moved&&!sitting&&!pickingUp&&!rummaging&&!isChopping?walkAction:idleAction;
     if(desiredAction&&desiredAction!==activeAction){activeAction?.fadeOut(.25);desiredAction.reset().fadeIn(.25).play();activeAction=desiredAction;}
     // Mixer updates first, then the procedural arm/leg/head offsets layer on top.
+    // Generate physically grounded end-effector targets in world coordinates.
+    // Feet track local terrain; hands reach towards a point in front of George.
+    if(adventurer&&georgeAnimations?.hasRig){
+      adventurer.updateMatrixWorld(true);
+      const forward=new THREE.Vector3(0,0,-1).applyQuaternion(adventurer.getWorldQuaternion(new THREE.Quaternion())).normalize();
+      const right=new THREE.Vector3(1,0,0).applyQuaternion(adventurer.getWorldQuaternion(new THREE.Quaternion())).normalize();
+      const targets={};
+      if(pickingUp){
+        const reach=adventurer.getWorldPosition(new THREE.Vector3()).addScaledVector(forward,.65);
+        const floor=height(reach.x,reach.z)+.35;
+        targets.leftHand=reach.clone().addScaledVector(right,-.22);targets.leftHand.y=floor;
+        targets.rightHand=reach.clone().addScaledVector(right,.22);targets.rightHand.y=floor;
+      }
+      if(moved&&!sitting&&!pickingUp){
+        const left=adventurer.getObjectByName('Foot.L'),rightFoot=adventurer.getObjectByName('Foot.R');
+        for(const [name,bone] of [['leftFoot',left],['rightFoot',rightFoot]])if(bone){
+          const foot=bone.getWorldPosition(new THREE.Vector3());
+          const terrain=height(foot.x,foot.z)+.08;
+          // Correct only near-ground stance, not airborne swing phases.
+          if(foot.y<terrain+.35){foot.y=terrain;targets[name]=foot;}
+        }
+      }
+      georgeAnimations.setIKTargets(targets);
+    }
     georgeAnimations?.update(dt,elapsed,isChopping?'chop':rummaging?'rummage':pickingUp?'pickup':moved&&!sitting&&!walkAction?'walk':moved&&!sitting?'idle':survivalPose);
     if(adventurer){const baseline=adventurer.userData.groundOffset??0;adventurer.rotation.x=THREE.MathUtils.lerp(adventurer.rotation.x,sleeping&&!moved?-Math.PI/2:0,Math.min(1,dt*5));adventurer.position.y=THREE.MathUtils.lerp(adventurer.position.y,sleeping&&!moved?.35:baseline-(sitting?.55:0)-(pickingUp?.24:0)-(rummaging?.18:0),Math.min(1,dt*8));}
     rodGrip.visible=goal==='fish_wait'&&!moved;
