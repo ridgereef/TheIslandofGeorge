@@ -885,7 +885,7 @@ export function mountIsland(element, onTick, visualOptions={}) {
     george.children.forEach(child=>{if(child!==adventurer)child.visible=false});
     adventurer.traverse(obj=>{if(obj.isMesh){obj.castShadow=true;obj.receiveShadow=true}});
     adventurerMixer=new THREE.AnimationMixer(adventurer);
-    georgeAnimations=createGeorgeAnimationController(adventurer);const rig=georgeAnimations.rigReport;visualOptions.onAnimationStatus?.(georgeAnimations.hasRig?`Character rig ready (${rig.boneCount} bones) — tap an animation`:`Character skeleton mismatch: ${rig.boneCount} bones; hips ${rig.hasHips?'OK':'missing'}, arms ${rig.hasArms?'OK':'missing'}. Names: ${rig.boneNames.slice(0,12).join(', ')||'none'}`);georgeAnimations?.setLearnedSkills(learnedMotorSkills);attachAxe();
+    georgeAnimations=createGeorgeAnimationController(adventurer);const rig=georgeAnimations.rigReport;visualOptions.onAnimationStatus?.(georgeAnimations.hasRig?`Character rig ready (${rig.boneCount} bones). Limb calibration: ${rig.calibrated?'4 chains measured':'incomplete — IK restricted'}. Tap an animation`:`Character skeleton mismatch: ${rig.boneCount} bones; hips ${rig.hasHips?'OK':'missing'}, arms ${rig.hasArms?'OK':'missing'}. Names: ${rig.boneNames.slice(0,12).join(', ')||'none'}`);georgeAnimations?.setLearnedSkills(learnedMotorSkills);attachAxe();
     // Root-motion position tracks can drive the entire character below terrain.
     // The shared world coordinates own translation; animation clips own limb motion.
     const findClip=name=>{
