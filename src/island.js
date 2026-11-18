@@ -736,7 +736,7 @@ export function mountIsland(element, onTick, visualOptions={}) {
   let adventurer=null,adventurerMixer=null,walkAction=null,runAction=null,idleAction=null,activeAction=null,georgeAnimations=null;
   // Lightweight active ragdoll: gravity-driven centre of mass, spring/damped
   // torso rotation and independently settling limbs. No external physics engine.
-  let manualAnimation=null;let manualUntil=0;let manualStarted=0;let manualDuration=0;let manualAuto=false;let nextGesture=performance.now()+ (12+Math.random()*16)*60000;const triggerManualAnimation=(action)=>{if(!['scratch_head','wipe_brow','knock_down','walk','fear_run','pickup','chop'].includes(action))return false;if(!adventurer){visualOptions.onAnimationStatus?.('3D character model still loading or unavailable');return false;}if(!georgeAnimations?.hasRig){const rig=georgeAnimations?.rigReport;visualOptions.onAnimationStatus?.(rig?`Skeleton mismatch (${rig.boneCount} bones). Found: ${rig.boneNames.slice(0,16).join(', ')||'none'}`:'Animation controller unavailable');return false;}if(action==='knock_down'){if(bodyPhysics.mode!=='upright')return false;bodyPhysics.manualFall=true;manualAnimation=null;visualOptions.onAnimationStatus?.('Knock down queued — applying fall physics');return true;}manualAnimation=action;manualAuto=false;manualStarted=performance.now();manualDuration=action==='chop'?1900:action==='walk'||action==='fear_run'?2600:action==='pickup'?2200:1900;manualUntil=manualStarted+manualDuration;visualOptions.onAnimationStatus?.('Playing '+action.replaceAll('_',' ')+' — autonomous movement paused');return true;};window.__georgeManualAnimation=triggerManualAnimation;const bodyPhysics={massKg:78,gravity:9.81,centreHeight:1.15,velocityY:0,lean:0,leanVelocity:0,fallTime:0,recovery:0,mode:'upright',previousX:null,previousZ:null};
+  let manualAnimation=null;let manualUntil=0;let manualStarted=0;let manualDuration=0;let manualAuto=false;let nextGesture=performance.now()+ (12+Math.random()*16)*60000;const triggerManualAnimation=(action)=>{if(!['scratch_head','wipe_brow','knock_down','walk','fear_run','pickup','chop'].includes(action))return false;if(!adventurer){visualOptions.onAnimationStatus?.('3D character model still loading or unavailable');return false;}if(!adventurerMixer){visualOptions.onAnimationStatus?.('Default model animations are not ready');return false;}if(!['walk','fear_run','knock_down'].includes(action)){visualOptions.onAnimationStatus?.('Custom animation disabled — original model animations only');return false;}if(action==='knock_down'){if(bodyPhysics.mode!=='upright')return false;bodyPhysics.manualFall=true;manualAnimation=null;visualOptions.onAnimationStatus?.('Knock down queued — applying fall physics');return true;}manualAnimation=action;manualAuto=false;manualStarted=performance.now();manualDuration=action==='chop'?1900:action==='walk'||action==='fear_run'?2600:action==='pickup'?2200:1900;manualUntil=manualStarted+manualDuration;visualOptions.onAnimationStatus?.('Playing '+action.replaceAll('_',' ')+' — autonomous movement paused');return true;};window.__georgeManualAnimation=triggerManualAnimation;const bodyPhysics={massKg:78,gravity:9.81,centreHeight:1.15,velocityY:0,lean:0,leanVelocity:0,fallTime:0,recovery:0,mode:'upright',previousX:null,previousZ:null};
   // Articulated particle ragdoll. Each anatomical segment has a mass,
   // Verlet momentum, a distance joint and a terrain collision radius.
   // The skeleton drives the visible GLB through constrained local rotations.
@@ -1175,34 +1175,10 @@ export function mountIsland(element, onTick, visualOptions={}) {
     // Do not infer an eating/drinking animation merely from low needs: wait for an actual action.
     const wantsRun=(manualAnimation==='fear_run'||(!manualAnimation&&frightened&&moved));
     const wantsWalk=(manualAnimation==='walk'||(!manualAnimation&&moved&&!sitting&&!pickingUp&&!rummaging&&!isChopping));
-    const desiredAction=wantsRun?(runAction||walkAction||idleAction):wantsWalk?(walkAction||idleAction):manualAnimation?null:idleAction;
-    if(manualAnimation&&manualAnimation!=='walk'&&manualAnimation!=='fear_run'&&activeAction){activeAction.stop();activeAction=null;}if(desiredAction&&desiredAction!==activeAction){activeAction?.fadeOut(.25);desiredAction.reset().fadeIn(.25).play();activeAction=desiredAction;}
-    // Mixer updates first, then the procedural arm/leg/head offsets layer on top.
-    // Generate physically grounded end-effector targets in world coordinates.
-    // Feet track local terrain; hands reach towards a point in front of George.
-    if(adventurer&&georgeAnimations?.hasRig){
-      adventurer.updateMatrixWorld(true);
-      const forward=new THREE.Vector3(0,0,-1).applyQuaternion(adventurer.getWorldQuaternion(new THREE.Quaternion())).normalize();
-      const right=new THREE.Vector3(1,0,0).applyQuaternion(adventurer.getWorldQuaternion(new THREE.Quaternion())).normalize();
-      const targets={};
-      if(pickingUp){
-        const reach=adventurer.getWorldPosition(new THREE.Vector3()).addScaledVector(forward,.65);
-        const floor=height(reach.x,reach.z)+.35;
-        targets.leftHand=reach.clone().addScaledVector(right,-.22);targets.leftHand.y=floor;
-        targets.rightHand=reach.clone().addScaledVector(right,.22);targets.rightHand.y=floor;
-      }
-      if(false&&moved&&!sitting&&!pickingUp){ // Foot CCD disabled: prevent stretching and floor penetration until rig calibration
-        const left=adventurer.getObjectByName('Foot.L'),rightFoot=adventurer.getObjectByName('Foot.R');
-        for(const [name,bone] of [['leftFoot',left],['rightFoot',rightFoot]])if(bone){
-          const foot=bone.getWorldPosition(new THREE.Vector3());
-          const terrain=height(foot.x,foot.z)+.08;
-          // Correct only near-ground stance, not airborne swing phases.
-          if(foot.y<terrain+.35){foot.y=terrain;targets[name]=foot;}
-        }
-      }
-      georgeAnimations.setIKTargets(targets);
-    }
-    if(manualAnimation&&performance.now()>=manualUntil){const completed=manualAnimation;manualAnimation=null;manualDuration=0;manualStarted=0;if(!manualAuto)visualOptions.onAnimationStatus?.('Completed '+completed.replaceAll('_',' ')+' once — autonomous behaviour resumed');manualAuto=false;}if(!manualAnimation&&bodyPhysics.mode==='upright'&&performance.now()>nextGesture){nextGesture=performance.now()+(12+Math.random()*16)*60000;if(!isChopping&&!fighting&&!frightened&&!rummaging&&!pickingUp&&!swimming){manualAnimation=temperature>24&&Math.random()<.75?'wipe_brow':'scratch_head';manualAuto=true;manualStarted=performance.now();manualDuration=1900;manualUntil=manualStarted+manualDuration;}}const motorAction=bodyPhysics.mode==='recovering'?'get_up':manualAnimation&&bodyPhysics.mode==='upright'?manualAnimation:bodyPhysics.mode!=='upright'?'idle':isChopping?'chop':fighting?'fight_stance':frightened?'fear_run':rummaging?'rummage':pickingUp?'pickup':moved&&!sitting?'walk':survivalPose;
+    const desiredAction=wantsRun?(runAction||walkAction||idleAction):wantsWalk?(walkAction||idleAction):idleAction||walkAction;
+    // Keep native GLB clip active; never stop it for unsupported custom poses.if(desiredAction&&desiredAction!==activeAction){activeAction?.fadeOut(.25);desiredAction.reset().fadeIn(.25).play();activeAction=desiredAction;}
+    // Physics, terrain, and autonomous decisions continue; procedural IK disabled.
+    if(manualAnimation&&performance.now()>=manualUntil){const completed=manualAnimation;manualAnimation=null;manualDuration=0;manualStarted=0;if(!manualAuto)visualOptions.onAnimationStatus?.('Completed '+completed.replaceAll('_',' ')+' once — autonomous behaviour resumed');manualAuto=false;}// Custom spontaneous gestures disabled; default GLB clips retain skeletal control.const motorAction=bodyPhysics.mode==='recovering'?'get_up':manualAnimation&&bodyPhysics.mode==='upright'?manualAnimation:bodyPhysics.mode!=='upright'?'idle':isChopping?'chop':fighting?'fight_stance':frightened?'fear_run':rummaging?'rummage':pickingUp?'pickup':moved&&!sitting?'walk':survivalPose;
     // Evaluate the axe's actual head-to-trunk distance only near the strike phase.
     // This is animation feedback; authoritative tree damage remains server controlled.
     let axeError=null;
@@ -1219,26 +1195,7 @@ export function mountIsland(element, onTick, visualOptions={}) {
         }
       }
     }
-    const nativeGait=!!activeAction&&((motorAction==='walk'&&activeAction===walkAction)||(motorAction==='fear_run'&&activeAction===runAction)||(motorAction==='idle'&&activeAction===idleAction));
-    const motorFrame=georgeAnimations?.update(dt,bodyPhysics.mode==='recovering'?bodyPhysics.recovery:manualAnimation?Math.min((performance.now()-manualStarted)/1000,manualDuration/1000):elapsed,motorAction,nativeGait);
-    if(motorFrame?.feedback){
-      const f=motorFrame.feedback;
-      const errors=motorAction==='pickup'?[f.leftHandError,f.rightHandError]:motorAction==='walk'||motorAction==='fear_run'?[f.leftFootError,f.rightFootError]:motorAction==='chop'?[axeError]:[];
-      const skill=motorAction==='chop'?'axe_chop':motorAction;
-      const valid=errors.filter(v=>Number.isFinite(v)&&v>=0);
-      if(valid.length){
-        const s=motorSamples[skill];
-        let score=valid.reduce((a,b)=>a+b,0)/valid.length;
-        if(skill==='walk'||skill==='fear_run'){
-          if(Number.isFinite(f.balanceError))score+=Math.min(2,f.balanceError)*.45;
-          if(Number.isFinite(f.footSlip))score+=Math.min(2,f.footSlip)*.3;
-        }
-        score+=Math.min(8,Math.max(0,f.jointViolations||0))*.12;
-        s.sum+=score;s.n++;
-        if(s.n>3000){s.sum/=2;s.n=Math.floor(s.n/2)}
-        if(s.n>=10)void uploadMotorFeedback();
-      }
-    }
+    // Native GLB AnimationMixer exclusively controls the skeleton.
     if(adventurer){const baseline=adventurer.userData.groundOffset??0;if(bodyPhysics.mode==='upright')adventurer.rotation.x=THREE.MathUtils.lerp(adventurer.rotation.x,sleeping&&!moved?-Math.PI/2:0,Math.min(1,dt*5));let targetY=sleeping&&!moved?.35:baseline-(sitting?.55:0)-(pickingUp?.24:0)-(rummaging?.18:0);
       if(bodyPhysics.mode==='upright'&&!sleeping&&height(george.position.x,george.position.z)>=-1&&!sitting&&!pickingUp){
         adventurer.updateMatrixWorld(true);
