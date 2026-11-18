@@ -239,7 +239,22 @@ export function createGeorgeAnimationController(root) {
       aimHead(0,0,weight);
       const pulse=Math.sin(t*5),slow=Math.sin(t*1.3);
       switch(current) {
-        case 'scratch_head': {const p=Math.sin(THREE.MathUtils.clamp(t/1.9,0,1)*Math.PI);offset('UpperArm.R',-.35*p,0,-.20*p,1);offset('LowerArm.R',-.85*p,0,0,1);aimHead(.08*p,-.10*p);break;}
+        case 'scratch_head': {
+          // Lift elbow first, then fold forearm towards the temple. Single gesture.
+          const smooth=v=>{v=THREE.MathUtils.clamp(v,0,1);return v*v*(3-2*v);};
+          const lift=smooth(t/.48)*(1-smooth((t-1.45)/.45));
+          const touch=smooth((t-.38)/.43)*(1-smooth((t-1.38)/.46));
+          const scratch=touch*Math.sin(Math.max(0,t-.78)*17)*.065;
+          const shoulder=bones.get('UpperArm.R'),head=bones.get('Head');
+          // Derive outward shoulder roll from actual bone positions, not assumed L/R axes.
+          root.updateMatrixWorld(true);
+          const outward=shoulder&&head?Math.sign(shoulder.getWorldPosition(new THREE.Vector3()).x-head.getWorldPosition(new THREE.Vector3()).x)||1:1;
+          offset('UpperArm.R',-1.03*lift,0,outward*.65*lift,1);
+          offset('LowerArm.R',-1.32*touch+scratch,0,0,1);
+          offset('Hand.R',-.12*touch,0,0,1);
+          aimHead(.035*touch,-.04*touch);
+          break;
+        }
         case 'wipe_brow': {const p=Math.sin(THREE.MathUtils.clamp(t/1.9,0,1)*Math.PI);offset('UpperArm.R',-.42*p,0,-.15*p,1);offset('LowerArm.R',-.9*p,0,0,1);aimHead(-.06*p,0);break;}
         case 'get_up': {const phase=THREE.MathUtils.clamp(t/2.4,0,1);const push=phase<.48?1:Math.max(0,1-(phase-.48)/.52);const crouch=phase<.5?1:Math.max(0,1-(phase-.5)*2);offset('Spine',.35*crouch);offset('Hips',.22*crouch);for(const side of ['L','R']){const sign=side==='L'?-1:1;offset('UpperArm.'+side,-.95*push,0,sign*.25*push,1);offset('LowerArm.'+side,-.65*push,0,0,1);offset('UpperLeg.'+side,-.8*crouch,0,sign*.08,1);offset('LowerLeg.'+side,1.15*crouch,0,0,1);}break;}
         case 'walk': {
