@@ -577,6 +577,23 @@ export function mountIsland(element, onTick, visualOptions={}) {
   let learnedMotorSkills={};
   const refreshMotorSkills=()=>{if(!itemUrl||!itemKey)return;fetch(itemUrl+'/rest/v1/george_motor_skills?select=skill,parameters',{headers:{apikey:itemKey,Authorization:'Bearer '+itemKey}}).then(r=>r.ok?r.json():[]).then(rows=>{learnedMotorSkills=Object.fromEntries(rows.filter(r=>r&&r.skill&&r.parameters).map(r=>[r.skill,r.parameters]));georgeAnimations?.setLearnedSkills(learnedMotorSkills)}).catch(error=>console.warn('Motor skills unavailable:',error));};
   refreshMotorSkills();const motorSkillRefresh=window.setInterval(refreshMotorSkills,60000);
+  const motorSamples={walk:{sum:0,n:0},pickup:{sum:0,n:0}};
+  let motorLastUpload=0,motorUploading=false;
+  async function uploadMotorFeedback(){
+    if(motorUploading||!itemUrl||!itemKey||!visualOptions.getMotorToken)return;
+    const now=Date.now();if(now-motorLastUpload<60000)return;
+    const entries=Object.entries(motorSamples).filter(([,v])=>v.n>=10);
+    if(!entries.length)return;
+    motorUploading=true;
+    try{
+      const token=await visualOptions.getMotorToken();if(!token)return;
+      const payload=entries.map(([skill,v])=>({skill,mean_error:Math.min(10,v.sum/v.n),samples:v.n,parameters:learnedMotorSkills[skill]||{},source:'browser_ik'}));
+      const response=await fetch(itemUrl+'/rest/v1/george_motor_feedback',{method:'POST',headers:{apikey:itemKey,Authorization:'Bearer '+token,'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify(payload)});
+      if(!response.ok)throw new Error('motor feedback '+response.status);
+      for(const [skill] of entries){motorSamples[skill].sum=0;motorSamples[skill].n=0;}
+      motorLastUpload=now;
+    }catch(error){console.warn('Skeletal feedback upload deferred:',error)}finally{motorUploading=false;}
+  }
   // Rabbits are server-simulated; these meshes only display Supabase snapshots.
   const rabbitRoot=new THREE.Group();scene.add(rabbitRoot);
   const rabbitBody=new THREE.SphereGeometry(.75,10,8);
@@ -1060,7 +1077,14 @@ export function mountIsland(element, onTick, visualOptions={}) {
       }
       georgeAnimations.setIKTargets(targets);
     }
-    georgeAnimations?.update(dt,elapsed,isChopping?'chop':rummaging?'rummage':pickingUp?'pickup':moved&&!sitting&&!walkAction?'walk':moved&&!sitting?'idle':survivalPose);
+    const motorAction=isChopping?'chop':rummaging?'rummage':pickingUp?'pickup':moved&&!sitting?'walk':survivalPose;
+    const motorFrame=georgeAnimations?.update(dt,elapsed,motorAction);
+    if(motorFrame?.feedback){
+      const f=motorFrame.feedback;
+      const errors=motorAction==='pickup'?[f.leftHandError,f.rightHandError]:motorAction==='walk'?[f.leftFootError,f.rightFootError]:[];
+      const valid=errors.filter(v=>Number.isFinite(v)&&v>=0);
+      if(valid.length){const s=motorSamples[motorAction];s.sum+=valid.reduce((a,b)=>a+b,0)/valid.length;s.n++;if(s.n>3000){s.sum/=2;s.n=Math.floor(s.n/2)}if(s.n>=10)void uploadMotorFeedback();}
+    }
     if(adventurer){const baseline=adventurer.userData.groundOffset??0;adventurer.rotation.x=THREE.MathUtils.lerp(adventurer.rotation.x,sleeping&&!moved?-Math.PI/2:0,Math.min(1,dt*5));adventurer.position.y=THREE.MathUtils.lerp(adventurer.position.y,sleeping&&!moved?.35:baseline-(sitting?.55:0)-(pickingUp?.24:0)-(rummaging?.18:0),Math.min(1,dt*8));}
     rodGrip.visible=goal==='fish_wait'&&!moved;
     const hook=sv?.hook;fishingLine.visible=bobber.visible=!!hook&&rodGrip.visible;
