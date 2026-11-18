@@ -1180,7 +1180,7 @@ export function mountIsland(element, onTick, visualOptions={}) {
         targets.leftHand=reach.clone().addScaledVector(right,-.22);targets.leftHand.y=floor;
         targets.rightHand=reach.clone().addScaledVector(right,.22);targets.rightHand.y=floor;
       }
-      if(moved&&!sitting&&!pickingUp){
+      if(false&&moved&&!sitting&&!pickingUp){ // Foot CCD disabled: prevent stretching and floor penetration until rig calibration
         const left=adventurer.getObjectByName('Foot.L'),rightFoot=adventurer.getObjectByName('Foot.R');
         for(const [name,bone] of [['leftFoot',left],['rightFoot',rightFoot]])if(bone){
           const foot=bone.getWorldPosition(new THREE.Vector3());
@@ -1242,7 +1242,7 @@ export function mountIsland(element, onTick, visualOptions={}) {
     const ground=height(george.position.x,george.position.z);
     const swimming=ground< -1;
     const ragdollActive=applyBodyPhysics(dt,ground,moved,sleeping,swimming);
-    if(!ragdollActive)george.position.y=(swimming?-2.3:ground)+(moved?Math.sin(elapsed*(swimming?3:7))*(swimming?.22:.035):0);
+    if(!ragdollActive)george.position.y=(swimming?-2.3:ground)+(swimming&&moved?Math.sin(elapsed*3)*.12:0);
     wetness=THREE.MathUtils.clamp(wetness+dt*((weather.rain||swimming)? .018 : -.008),0,1);
     if(sv)wetness=Number(sv.wetness)/100;const feelsLike=weather.feelsLike??(temperature+daylight*(1-weather.cloud)*3)-(wetness*5);
     const thermal=feelsLike<12?'Cold':feelsLike>28?'Hot':'Comfortable';if(followGeorge){
