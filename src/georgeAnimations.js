@@ -53,8 +53,72 @@ export function createGeorgeAnimationController(root) {
       head.quaternion.copy(headBase).multiply(headMovement);
     }
   }
+  // World-space CCD inverse kinematics: rotate joints in their local frames,
+  // never translate bones or exceed conservative anatomical budgets.
+  const jointLimits={
+    'UpperArm.L':[-1.65,1.1,-.95,.95,-1.1,.4], 'UpperArm.R':[-1.65,1.1,-.95,.95,-.4,1.1],
+    'LowerArm.L':[-2.1,.15,-.25,.25,-.25,.25], 'LowerArm.R':[-2.1,.15,-.25,.25,-.25,.25],
+    'UpperLeg.L':[-1.1,1.0,-.35,.35,-.35,.35], 'UpperLeg.R':[-1.1,1.0,-.35,.35,-.35,.35],
+    'LowerLeg.L':[-.15,1.9,-.12,.12,-.12,.12], 'LowerLeg.R':[-.15,1.9,-.12,.12,-.12,.12]
+  };
+  const worldA=new THREE.Vector3(),worldB=new THREE.Vector3(),axis=new THREE.Vector3();
+  const delta=new THREE.Quaternion(),inverse=new THREE.Quaternion(),localDelta=new THREE.Quaternion();
+  const angles=new THREE.Euler(0,0,0,'XYZ');
+  function limitJoint(name){
+    const bone=bones.get(name),base=bindRotations.get(name),bounds=jointLimits[name];
+    if(!bone||!base||!bounds)return;
+    localDelta.copy(base).invert().multiply(bone.quaternion);
+    angles.setFromQuaternion(localDelta,'XYZ');
+    angles.x=THREE.MathUtils.clamp(angles.x,bounds[0],bounds[1]);
+    angles.y=THREE.MathUtils.clamp(angles.y,bounds[2],bounds[3]);
+    angles.z=THREE.MathUtils.clamp(angles.z,bounds[4],bounds[5]);
+    bone.quaternion.copy(base).multiply(delta.setFromEuler(angles));
+  }
+  function solveChain(names,target,iterations=5){
+    const end=bones.get(names[names.length-1]);if(!end||!target)return null;
+    const goal=target.isVector3?target:new THREE.Vector3(target.x,target.y,target.z);
+    for(let iteration=0;iteration<iterations;iteration++){
+      for(let i=names.length-2;i>=0;i--){
+        const bone=bones.get(names[i]);if(!bone)continue;
+        root.updateMatrixWorld(true);
+        bone.getWorldPosition(worldA);end.getWorldPosition(worldB);
+        const toEnd=worldB.clone().sub(worldA),toGoal=goal.clone().sub(worldA);
+        if(toEnd.lengthSq()<1e-7||toGoal.lengthSq()<1e-7)continue;
+        const angle=Math.min(.22,toEnd.angleTo(toGoal));
+        axis.crossVectors(toEnd,toGoal).normalize();
+        if(!Number.isFinite(axis.x)||axis.lengthSq()<1e-7)continue;
+        delta.setFromAxisAngle(axis,angle);
+        bone.parent.getWorldQuaternion(inverse).invert();
+        localDelta.copy(inverse).multiply(delta).multiply(inverse.invert());
+        bone.quaternion.premultiply(localDelta);
+        limitJoint(names[i]);
+      }
+    }
+    root.updateMatrixWorld(true);end.getWorldPosition(worldB);
+    return worldB.distanceTo(goal);
+  }
+  const feedback={action:'idle',leftHandError:null,rightHandError:null,leftFootError:null,rightFootError:null,jointViolations:0};
+  let targets={};
+  function applyKinematics(action){
+    feedback.action=action;feedback.leftHandError=null;feedback.rightHandError=null;
+    feedback.leftFootError=null;feedback.rightFootError=null;feedback.jointViolations=0;
+    const enabled=action==='pickup'||action==='walk';
+    if(!enabled)return;
+    for(const side of ['L','R']){
+      if(action==='pickup'&&targets[side==='L'?'leftHand':'rightHand']){
+        const error=solveChain(['UpperArm.'+side,'LowerArm.'+side,'Hand.'+side],targets[side==='L'?'leftHand':'rightHand']);
+        feedback[side==='L'?'leftHandError':'rightHandError']=error;
+      }
+      if(action==='walk'&&targets[side==='L'?'leftFoot':'rightFoot']){
+        const error=solveChain(['UpperLeg.'+side,'LowerLeg.'+side,'Foot.'+side],targets[side==='L'?'leftFoot':'rightFoot']);
+        feedback[side==='L'?'leftFootError':'rightFootError']=error;
+      }
+    }
+  }
   return {
     hasRig: bones.has('Hips') && bones.has('UpperArm.L'),
+    setIKTargets(next){targets=next||{};},
+    getSkeletalFeedback(){return {...feedback};},
     setLearnedSkills(skills){learnedSkills=skills&&typeof skills==='object'?skills:{};},
     update(dt, seconds, requested) {
       const target = clipActions.has(requested) ? requested : 'idle';
@@ -129,7 +193,6 @@ export function createGeorgeAnimationController(root) {
           offset('UpperArm.R',clamp(p.right_reach,-1.5,-.55,-1.15),0,.22);
           break;
         }
-          break;
         case 'rummage': {
           // Bend only during crate access, with arms extended and searching.
           const reach=Math.sin(t*4.8),alternate=Math.sin(t*4.8+Math.PI);
@@ -190,7 +253,8 @@ export function createGeorgeAnimationController(root) {
           aimHead(.08*Math.sin(t*.7),.30*slow);
           break;
       }
-      return {action:current,weight};
+      applyKinematics(current);
+      return {action:current,weight,feedback:{...feedback}};
     }
   };
 }
