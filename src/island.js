@@ -1236,7 +1236,7 @@ export function mountIsland(element, onTick, visualOptions={}) {
       }
     }
     if(adventurer){const baseline=adventurer.userData.groundOffset??0;if(bodyPhysics.mode==='upright')adventurer.rotation.x=THREE.MathUtils.lerp(adventurer.rotation.x,sleeping&&!moved?-Math.PI/2:0,Math.min(1,dt*5));let targetY=sleeping&&!moved?.35:baseline-(sitting?.55:0)-(pickingUp?.24:0)-(rummaging?.18:0);
-      if(bodyPhysics.mode==='upright'&&!sleeping&&!swimming&&!sitting&&!pickingUp){
+      if(bodyPhysics.mode==='upright'&&!sleeping&&height(george.position.x,george.position.z)>=-1&&!sitting&&!pickingUp){
         adventurer.updateMatrixWorld(true);
         const feet=['Foot.L','Foot.R'].map(name=>adventurer.getObjectByName(name)).filter(Boolean);
         const groundWorld=george.position.y;
