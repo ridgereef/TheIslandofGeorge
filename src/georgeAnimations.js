@@ -97,12 +97,13 @@ export function createGeorgeAnimationController(root) {
     root.updateMatrixWorld(true);end.getWorldPosition(worldB);
     return worldB.distanceTo(goal);
   }
-  const feedback={action:'idle',leftHandError:null,rightHandError:null,leftFootError:null,rightFootError:null,jointViolations:0};
+  const feedback={action:'idle',leftHandError:null,rightHandError:null,leftFootError:null,rightFootError:null,jointViolations:0,balanceError:null,footSlip:null};
+  const previousFeet=new Map();
   let targets={};
   function applyKinematics(action){
     feedback.action=action;feedback.leftHandError=null;feedback.rightHandError=null;
-    feedback.leftFootError=null;feedback.rightFootError=null;feedback.jointViolations=0;
-    const enabled=action==='pickup'||action==='walk';
+    feedback.leftFootError=null;feedback.rightFootError=null;feedback.jointViolations=0;feedback.balanceError=null;feedback.footSlip=null;
+    const enabled=action==='pickup'||action==='walk'||action==='fear_run';
     if(!enabled)return;
     for(const side of ['L','R']){
       if(action==='pickup'&&targets[side==='L'?'leftHand':'rightHand']){
@@ -113,6 +114,33 @@ export function createGeorgeAnimationController(root) {
         const error=solveChain(['UpperLeg.'+side,'LowerLeg.'+side,'Foot.'+side],targets[side==='L'?'leftFoot':'rightFoot']);
         feedback[side==='L'?'leftFootError':'rightFootError']=error;
       }
+    }
+    // Stance stability: measure pelvis projection relative to planted foot support.
+    // This is a kinematic proxy, not a rigid-body physics simulation.
+    if(action==='walk'||action==='fear_run'){
+      root.updateMatrixWorld(true);
+      const pelvis=bones.get('Hips');
+      const support=[];let slip=0,slipCount=0;
+      for(const side of ['L','R']){
+        const foot=bones.get('Foot.'+side),target=targets[side==='L'?'leftFoot':'rightFoot'];
+        if(!foot||!target){previousFeet.delete(side);continue;}
+        const position=foot.getWorldPosition(new THREE.Vector3());support.push(position);
+        const prior=previousFeet.get(side);
+        if(prior){slip+=Math.hypot(position.x-prior.x,position.z-prior.z);slipCount++;}
+        previousFeet.set(side,position.clone());
+      }
+      if(pelvis&&support.length){
+        const hip=pelvis.getWorldPosition(new THREE.Vector3());
+        const centre=support.reduce((sum,v)=>sum.add(v),new THREE.Vector3()).multiplyScalar(1/support.length);
+        feedback.balanceError=Math.max(0,Math.hypot(hip.x-centre.x,hip.z-centre.z)-(support.length===2?.32:.2));
+      }
+      if(slipCount)feedback.footSlip=slip/slipCount;
+    }else previousFeet.clear();
+    for(const [name,bounds] of Object.entries(jointLimits)){
+      const bone=bones.get(name),base=bindRotations.get(name);if(!bone||!base)continue;
+      localDelta.copy(base).invert().multiply(bone.quaternion);
+      angles.setFromQuaternion(localDelta,'XYZ');
+      if(angles.x<bounds[0]-.02||angles.x>bounds[1]+.02||angles.y<bounds[2]-.02||angles.y>bounds[3]+.02||angles.z<bounds[4]-.02||angles.z>bounds[5]+.02)feedback.jointViolations++;
     }
   }
   return {
