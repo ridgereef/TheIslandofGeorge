@@ -732,7 +732,18 @@ export function mountIsland(element, onTick, visualOptions={}) {
     console.info('Fox loaded with animations:',clips.map(c=>c.name));
   },undefined,error=>console.warn('Fox model unavailable; using existing dog proxy',error));
   let dogRefresh=null;
-  const loadDog=()=>{if(!itemUrl||!itemKey)return;fetch(itemUrl+'/rest/v1/island_dog_status?select=id,x,z,health,state,companion',{headers:{apikey:itemKey,Authorization:'Bearer '+itemKey}}).then(r=>r.ok?r.json():[]).then(rows=>{const dog=rows[0];if(!dog){dogRoot.visible=false;return;}const dogX=Number(dog.x),dogZ=Number(dog.z);if(!Number.isFinite(dogX)||!Number.isFinite(dogZ)){dogRoot.visible=false;return;}dogRoot.visible=Number(dog.health)>0;dogRoot.userData.behaviorState=String(dog.state||'').toLowerCase();dogRoot.userData.isCompanion=!!dog.companion;if(!dogRoot.userData.destination){dogRoot.position.set(dogX,height(dogX,dogZ),dogZ)}dogRoot.userData.destination=new THREE.Vector3(dogX,0,dogZ);if(cameraSubject.type==='dog'&&cameraSubject.id===String(dog.id)){cameraSubject.x=dogX;cameraSubject.z=dogZ}}).catch(()=>{});};
+  const loadDog=()=>{if(!itemUrl||!itemKey)return;fetch(itemUrl+'/rest/v1/island_dog_status?select=id,x,z,destination_x,destination_z,health,state,companion',{headers:{apikey:itemKey,Authorization:'Bearer '+itemKey}}).then(r=>r.ok?r.json():[]).then(rows=>{const dog=rows[0];if(!dog){dogRoot.visible=false;return;}const dogX=Number(dog.x),dogZ=Number(dog.z);if(!Number.isFinite(dogX)||!Number.isFinite(dogZ)){dogRoot.visible=false;return;}dogRoot.visible=Number(dog.health)>0;dogRoot.userData.behaviorState=String(dog.state||'').toLowerCase();dogRoot.userData.isCompanion=!!dog.companion;if(!dogRoot.userData.destination){dogRoot.position.set(dogX,height(dogX,dogZ),dogZ)}
+    // The authoritative x/z updates only on server ticks. Follow the AI's
+    // intended destination between ticks, not its last recorded position:
+    // otherwise the fox walks on the spot for most of every minute.
+    const goalX=Number(dog.destination_x),goalZ=Number(dog.destination_z);
+    const validGoal=Number.isFinite(goalX)&&Number.isFinite(goalZ)&&dog.destination_x!==null&&dog.destination_z!==null;
+    dogRoot.userData.destination=new THREE.Vector3(validGoal?goalX:dogX,0,validGoal?goalZ:dogZ);
+    // Correct large discrepancies on reload or after an autonomous teleport,
+    // without snapping the fox backward every five seconds.
+    if(Math.hypot(dogRoot.position.x-dogX,dogRoot.position.z-dogZ)>25){
+      dogRoot.position.set(dogX,height(dogX,dogZ),dogZ);
+    }if(cameraSubject.type==='dog'&&cameraSubject.id===String(dog.id)){cameraSubject.x=dogX;cameraSubject.z=dogZ}}).catch(()=>{});};
   loadDog();dogRefresh=window.setInterval(loadDog,5000);
   // One persistent reddish clay outcrop, made from a compact cluster of rocks.
   const clayRoot=new THREE.Group();scene.add(clayRoot);
@@ -1131,7 +1142,7 @@ export function mountIsland(element, onTick, visualOptions={}) {
       const distance=Math.hypot(dest.x-oldX,dest.z-oldZ);
       const state=dogRoot.userData.behaviorState||'';
       const resting=/sleep|rest|sit|lie/.test(state);
-      const pace=resting?0:(/run|chase|flee|hunt/i.test(state)?3.2:1.65);
+      const pace=resting?0:(/run|chase|flee|hunt/i.test(state)?3.2:/stalk/i.test(state)?.65:1.2);
       const step=Math.min(distance,pace*dt);
       if(distance>.015&&step>0){
         dogRoot.position.x=oldX+(dest.x-oldX)*step/distance;
