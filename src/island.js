@@ -646,7 +646,7 @@ export function mountIsland(element, onTick, visualOptions={}) {
   dogRoot.visible=false;
   // The fox is visual-only: dog AI, position and survival remain authoritative.
   // Keep the primitive as a fallback if the GLB is unavailable (e.g. LFS pointer).
-  let foxMixer=null,foxClips=null,foxAction=null,foxFacingOffset=0;
+  let foxMixer=null,foxClips=null,foxAction=null,foxFacingOffset=0,foxVisual=null,foxFeetOffset=0,foxGroundSample=0;
   const foxUrl='/models/stylized_fox__rigged__animated.glb';
   const foxLoader=new GLTFLoader();
   foxLoader.load(foxUrl,gltf=>{
@@ -701,6 +701,8 @@ export function mountIsland(element, onTick, visualOptions={}) {
     const scaledBounds=new THREE.Box3().setFromObject(fox);
     const center=scaledBounds.getCenter(new THREE.Vector3());
     fox.position.set(-center.x,-scaledBounds.min.y,-center.z);
+    foxVisual=fox;
+    foxFeetOffset=fox.position.y;
     fox.traverse(node=>{if(node.isMesh){node.castShadow=true;node.receiveShadow=true;}});
     // Prevent imported animation clips from translating/scaling the entire fox
     // through the world. The authoritative dog position is handled by dogRoot.
@@ -1123,9 +1125,22 @@ export function mountIsland(element, onTick, visualOptions={}) {
     if(dogRoot.visible&&dogRoot.userData.destination){
       const dest=dogRoot.userData.destination;
       const oldX=dogRoot.position.x,oldZ=dogRoot.position.z;
-      dogRoot.position.x=THREE.MathUtils.damp(oldX,dest.x,2,dt);
-      dogRoot.position.z=THREE.MathUtils.damp(oldZ,dest.z,2,dt);
-      dogRoot.position.y=height(dogRoot.position.x,dogRoot.position.z);
+      // Move the fox across actual terrain at a believable world speed.
+      // Exponential damping caused almost no displacement at short server steps
+      // while the walk cycle continued, giving a treadmill/sliding appearance.
+      const distance=Math.hypot(dest.x-oldX,dest.z-oldZ);
+      const state=dogRoot.userData.behaviorState||'';
+      const resting=/sleep|rest|sit|lie/.test(state);
+      const pace=resting?0:(/run|chase|flee|hunt/i.test(state)?3.2:1.65);
+      const step=Math.min(distance,pace*dt);
+      if(distance>.015&&step>0){
+        dogRoot.position.x=oldX+(dest.x-oldX)*step/distance;
+        dogRoot.position.z=oldZ+(dest.z-oldZ)*step/distance;
+      }
+      // Terrain height at each foot area rather than only at the root.
+      const px=dogRoot.position.x,pz=dogRoot.position.z;
+      const ground=Math.max(height(px,pz),height(px+.28,pz),height(px-.28,pz),height(px,pz+.28),height(px,pz-.28));
+      dogRoot.position.y=ground+.035;
       const dx=dogRoot.position.x-oldX,dz=dogRoot.position.z-oldZ;
       const speed=Math.hypot(dx,dz)/Math.max(dt,.001);
       const toTargetX=dest.x-dogRoot.position.x,toTargetZ=dest.z-dogRoot.position.z;
@@ -1137,13 +1152,29 @@ export function mountIsland(element, onTick, visualOptions={}) {
         dogRoot.rotation.y+=yawError*Math.min(1,dt*7);
       }
       if(foxMixer&&foxClips){
-        const state=dogRoot.userData.behaviorState||'';
-        const resting=/sleep|rest|sit|lie/.test(state);
         const next=resting?(foxClips.rest||foxClips.idle):(speed>1.8?(foxClips.run||foxClips.walk):(speed>.12?(foxClips.walk||foxClips.run):foxClips.idle))||foxClips.idle;
         if(next){const action=foxMixer.clipAction(next);if(action!==foxAction){foxAction?.fadeOut(.2);action.reset().fadeIn(.2).play();foxAction=action;}}
       }
     }
-    foxMixer?.update(dt);moveUnlockedCamera(dt);const actualCycle=getDayPhase(),cycle=visualOptions.forceDaylight?.() ? .5 : actualCycle,angle=cycle*Math.PI*2;
+    foxMixer?.update(dt);
+    if(foxVisual&&dogRoot.visible){
+      // The imported animation can change leg pose below the model's original
+      // bounding box. Correct the visual's foot height without moving the AI root.
+      foxGroundSample+=dt;
+      if(foxGroundSample>.09){
+        foxGroundSample=0;
+        foxVisual.updateMatrixWorld(true);
+        const bounds=new THREE.Box3();
+        foxVisual.traverse(node=>{if(node.isSkinnedMesh&&node.visible)bounds.expandByObject(node);});
+        if(!bounds.isEmpty()&&Number.isFinite(bounds.min.y)){
+          const groundY=dogRoot.position.y;
+          const error=groundY+.025-bounds.min.y;
+          foxFeetOffset=THREE.MathUtils.clamp(foxVisual.position.y+error,foxFeetOffset-.22,foxFeetOffset+.22);
+        }
+      }
+      foxVisual.position.y=THREE.MathUtils.damp(foxVisual.position.y,foxFeetOffset,12,dt);
+    }
+    moveUnlockedCamera(dt);const actualCycle=getDayPhase(),cycle=visualOptions.forceDaylight?.() ? .5 : actualCycle,angle=cycle*Math.PI*2;
     // Approximate daylight window 06:00–20:00 NZ local time, with smooth twilight.
     const hour=cycle*24;
     const smooth=(a,b,v)=>{const t=THREE.MathUtils.clamp((v-a)/(b-a),0,1);return t*t*(3-2*t)};
