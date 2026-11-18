@@ -651,6 +651,25 @@ export function mountIsland(element, onTick, visualOptions={}) {
   const foxLoader=new GLTFLoader();
   foxLoader.load(foxUrl,gltf=>{
     const fox=gltf.scene;
+    // Many downloadable fox GLBs include a presentation diorama. Keep the
+    // rigged character, but discard non-character ground, grass and props.
+    const sceneryName=/ground|terrain|grass|bush|plant|flower|rock|stone|tree|base|platform|pedestal|diorama|environment|floor|landscape|clutter|decor/i;
+    const skinned=[];
+    fox.traverse(node=>{if(node.isSkinnedMesh)skinned.push(node);});
+    const animatedNames=new Set();
+    (gltf.animations||[]).forEach(clip=>clip.tracks.forEach(track=>animatedNames.add(track.name.split('.')[0])));
+    const scenery=[];
+    fox.traverse(node=>{
+      if(!node.isMesh||node.isSkinnedMesh)return;
+      const box=new THREE.Box3().setFromObject(node);
+      const span=box.getSize(new THREE.Vector3());
+      const name=[node.name,node.parent?.name].join(' ');
+      // Avoid removing unskinned eyes/fur; remove obvious diorama parts.
+      if(sceneryName.test(name)||(skinned.length>0&&span.x>2.5&&span.z>2.5&&span.y<span.x*.4)){
+        scenery.push(node);
+      }
+    });
+    scenery.forEach(node=>node.parent?.remove(node));
     const bounds=new THREE.Box3().setFromObject(fox);
     const dimensions=bounds.getSize(new THREE.Vector3());
     if(!Number.isFinite(dimensions.y)||dimensions.y<.001)throw new Error('Fox model has invalid bounds');
@@ -1076,11 +1095,18 @@ export function mountIsland(element, onTick, visualOptions={}) {
       dogRoot.position.y=height(dogRoot.position.x,dogRoot.position.z);
       const dx=dogRoot.position.x-oldX,dz=dogRoot.position.z-oldZ;
       const speed=Math.hypot(dx,dz)/Math.max(dt,.001);
-      if(speed>.08)dogRoot.rotation.y=THREE.MathUtils.damp(dogRoot.rotation.y,Math.atan2(-dz,dx)+foxFacingOffset,7,dt);
+      const toTargetX=dest.x-dogRoot.position.x,toTargetZ=dest.z-dogRoot.position.z;
+      const targetDistance=Math.hypot(toTargetX,toTargetZ);
+      if(targetDistance>.08){
+        // GLB fox faces forward along -Z; orient towards server movement target.
+        const desiredYaw=Math.atan2(-toTargetX,-toTargetZ)+foxFacingOffset;
+        const yawError=Math.atan2(Math.sin(desiredYaw-dogRoot.rotation.y),Math.cos(desiredYaw-dogRoot.rotation.y));
+        dogRoot.rotation.y+=yawError*Math.min(1,dt*7);
+      }
       if(foxMixer&&foxClips){
         const state=dogRoot.userData.behaviorState||'';
         const resting=/sleep|rest|sit|lie/.test(state);
-        const next=resting?(foxClips.rest||foxClips.idle):(speed>2.5?(foxClips.run||foxClips.walk):(speed>.08?(foxClips.walk||foxClips.run):foxClips.idle))||foxClips.idle;
+        const next=resting?(foxClips.rest||foxClips.idle):(targetDistance>4?(foxClips.run||foxClips.walk):(targetDistance>.12?(foxClips.walk||foxClips.run):foxClips.idle))||foxClips.idle;
         if(next){const action=foxMixer.clipAction(next);if(action!==foxAction){foxAction?.fadeOut(.2);action.reset().fadeIn(.2).play();foxAction=action;}}
       }
     }
