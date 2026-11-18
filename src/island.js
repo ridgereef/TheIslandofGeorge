@@ -648,8 +648,8 @@ export function mountIsland(element, onTick, visualOptions={}) {
   // Keep the primitive as a fallback if the GLB is unavailable (e.g. LFS pointer).
   let foxMixer=null,foxClips=null,foxAction=null,foxFacingOffset=0;
   const foxUrl='/models/stylized_fox__rigged__animated.glb';
-  loader.load(foxUrl,gltf=>{
-    if(disposed)return;
+  const foxLoader=new GLTFLoader();
+  foxLoader.load(foxUrl,gltf=>{
     const fox=gltf.scene;
     const bounds=new THREE.Box3().setFromObject(fox);
     const dimensions=bounds.getSize(new THREE.Vector3());
