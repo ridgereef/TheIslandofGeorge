@@ -644,6 +644,39 @@ export function mountIsland(element, onTick, visualOptions={}) {
   for(const z of [-.3,.3])for(const x of [-.55,.5]){const leg=new THREE.Mesh(new THREE.CylinderGeometry(.11,.13,.65,7),dogFur);leg.position.set(x,.34,z);dogRoot.add(leg)}
   for(const z of [-.22,.22]){const ear=new THREE.Mesh(new THREE.ConeGeometry(.17,.43,7),dogFur);ear.position.set(1.01,1.45,z);dogRoot.add(ear)}
   dogRoot.visible=false;
+  // The fox is visual-only: dog AI, position and survival remain authoritative.
+  // Keep the primitive as a fallback if the GLB is unavailable (e.g. LFS pointer).
+  let foxMixer=null,foxClips=null,foxAction=null,foxFacingOffset=0;
+  const foxUrl='/models/stylized_fox__rigged__animated.glb';
+  loader.load(foxUrl,gltf=>{
+    if(disposed)return;
+    const fox=gltf.scene;
+    const bounds=new THREE.Box3().setFromObject(fox);
+    const dimensions=bounds.getSize(new THREE.Vector3());
+    if(!Number.isFinite(dimensions.y)||dimensions.y<.001)throw new Error('Fox model has invalid bounds');
+    fox.scale.setScalar(1.25/dimensions.y);
+    fox.updateMatrixWorld(true);
+    const scaledBounds=new THREE.Box3().setFromObject(fox);
+    const center=scaledBounds.getCenter(new THREE.Vector3());
+    fox.position.set(-center.x,-scaledBounds.min.y,-center.z);
+    fox.traverse(node=>{if(node.isMesh){node.castShadow=true;node.receiveShadow=true;}});
+    const clips=gltf.animations||[];
+    const match=pattern=>clips.find(c=>pattern.test(c.name));
+    foxClips={
+      walk:match(/walk|trot|locomotion/i),
+      run:match(/run|gallop|sprint/i),
+      idle:match(/idle|stand|breath/i),
+      rest:match(/sleep|sit|rest|lie/i)
+    };
+    foxMixer=clips.length?new THREE.AnimationMixer(fox):null;
+    const fallback=foxClips.idle||clips[0]||null;
+    if(fallback&&foxMixer){foxAction=foxMixer.clipAction(fallback);foxAction.play();}
+    // Only remove the proxy after the GLB and animations are ready.
+    dogRoot.children.slice().forEach(child=>{dogRoot.remove(child);});
+    dogRoot.add(fox);
+    dogRoot.userData.foxModel=fox;
+    console.info('Fox loaded with animations:',clips.map(c=>c.name));
+  },undefined,error=>console.warn('Fox model unavailable; using existing dog proxy',error));
   let dogRefresh=null;
   const loadDog=()=>{if(!itemUrl||!itemKey)return;fetch(itemUrl+'/rest/v1/island_dog_status?select=id,x,z,health,state,companion',{headers:{apikey:itemKey,Authorization:'Bearer '+itemKey}}).then(r=>r.ok?r.json():[]).then(rows=>{const dog=rows[0];if(!dog){dogRoot.visible=false;return;}const dogX=Number(dog.x),dogZ=Number(dog.z);if(!Number.isFinite(dogX)||!Number.isFinite(dogZ)){dogRoot.visible=false;return;}dogRoot.visible=Number(dog.health)>0;dogRoot.userData.behaviorState=String(dog.state||'').toLowerCase();dogRoot.userData.isCompanion=!!dog.companion;if(!dogRoot.userData.destination){dogRoot.position.set(dogX,height(dogX,dogZ),dogZ)}dogRoot.userData.destination=new THREE.Vector3(dogX,0,dogZ);if(cameraSubject.type==='dog'&&cameraSubject.id===String(dog.id)){cameraSubject.x=dogX;cameraSubject.z=dogZ}}).catch(()=>{});};
   loadDog();dogRefresh=window.setInterval(loadDog,5000);
@@ -1034,7 +1067,24 @@ export function mountIsland(element, onTick, visualOptions={}) {
     sharedRefresh=window.setInterval(loadSharedGeorge,5000);loadFish();fishRefresh=window.setInterval(loadFish,15000);
   }
   let frame,elapsed=0,last=0,disposed=false;const clock=new THREE.Clock();const resize=()=>{const w=element.clientWidth,h=Math.max(280,element.clientHeight);renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix()};const observer=new ResizeObserver(resize);observer.observe(element);resize();
-  const animate=()=>{if(disposed)return;frame=requestAnimationFrame(animate);const dt=Math.min(clock.getDelta(),.1);elapsed+=dt;adventurerMixer?.update(dt);animateRabbits(dt);if(dogRoot.visible&&dogRoot.userData.destination){const dest=dogRoot.userData.destination;dogRoot.position.x=THREE.MathUtils.damp(dogRoot.position.x,dest.x,2,dt);dogRoot.position.z=THREE.MathUtils.damp(dogRoot.position.z,dest.z,2,dt);dogRoot.position.y=height(dogRoot.position.x,dogRoot.position.z)}moveUnlockedCamera(dt);const actualCycle=getDayPhase(),cycle=visualOptions.forceDaylight?.() ? .5 : actualCycle,angle=cycle*Math.PI*2;
+  const animate=()=>{if(disposed)return;frame=requestAnimationFrame(animate);const dt=Math.min(clock.getDelta(),.1);elapsed+=dt;adventurerMixer?.update(dt);animateRabbits(dt);
+    if(dogRoot.visible&&dogRoot.userData.destination){
+      const dest=dogRoot.userData.destination;
+      const oldX=dogRoot.position.x,oldZ=dogRoot.position.z;
+      dogRoot.position.x=THREE.MathUtils.damp(oldX,dest.x,2,dt);
+      dogRoot.position.z=THREE.MathUtils.damp(oldZ,dest.z,2,dt);
+      dogRoot.position.y=height(dogRoot.position.x,dogRoot.position.z);
+      const dx=dogRoot.position.x-oldX,dz=dogRoot.position.z-oldZ;
+      const speed=Math.hypot(dx,dz)/Math.max(dt,.001);
+      if(speed>.08)dogRoot.rotation.y=THREE.MathUtils.damp(dogRoot.rotation.y,Math.atan2(-dz,dx)+foxFacingOffset,7,dt);
+      if(foxMixer&&foxClips){
+        const state=dogRoot.userData.behaviorState||'';
+        const resting=/sleep|rest|sit|lie/.test(state);
+        const next=resting?(foxClips.rest||foxClips.idle):(speed>2.5?(foxClips.run||foxClips.walk):(speed>.08?(foxClips.walk||foxClips.run):foxClips.idle))||foxClips.idle;
+        if(next){const action=foxMixer.clipAction(next);if(action!==foxAction){foxAction?.fadeOut(.2);action.reset().fadeIn(.2).play();foxAction=action;}}
+      }
+    }
+    foxMixer?.update(dt);moveUnlockedCamera(dt);const actualCycle=getDayPhase(),cycle=visualOptions.forceDaylight?.() ? .5 : actualCycle,angle=cycle*Math.PI*2;
     // Approximate daylight window 06:00–20:00 NZ local time, with smooth twilight.
     const hour=cycle*24;
     const smooth=(a,b,v)=>{const t=THREE.MathUtils.clamp((v-a)/(b-a),0,1);return t*t*(3-2*t)};
