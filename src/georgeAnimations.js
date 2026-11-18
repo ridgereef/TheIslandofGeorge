@@ -149,7 +149,7 @@ export function createGeorgeAnimationController(root) {
     getSkeletalFeedback(){return {...feedback};},
     setLearnedSkills(skills){learnedSkills=skills&&typeof skills==='object'?skills:{};},
     update(dt, seconds, requested) {
-      const target = clipActions.has(requested) ? requested : 'idle';
+      const target = ['scratch_head','wipe_brow'].includes(requested) ? requested : clipActions.has(requested) ? requested : 'idle';
       if (target !== current) {
         weight = Math.max(0,weight-dt*4);
         if (weight < .03) current=target;
@@ -169,6 +169,8 @@ export function createGeorgeAnimationController(root) {
       aimHead(0,0,weight);
       const pulse=Math.sin(t*5),slow=Math.sin(t*1.3);
       switch(current) {
+        case 'scratch_head': {const p=Math.sin(Math.min(1,(t%2)/1.7)*Math.PI);offset('UpperArm.R',-1.2*p,0,.22*p,1);offset('LowerArm.R',-1.35*p,0,0,1);aimHead(.08*p,-.10*p);break;}
+        case 'wipe_brow': {const p=Math.sin(Math.min(1,(t%2)/1.7)*Math.PI);offset('UpperArm.R',-1.35*p,.20*Math.sin(t*5)*p,.18*p,1);offset('LowerArm.R',-1.1*p,0,0,1);aimHead(-.06*p,0);break;}
         case 'walk': {
           // Fallback gait if the GLB has no identifiable walking clip.
           // Animate from bind pose, never accumulate limb rotations.
