@@ -817,7 +817,7 @@ export function mountIsland(element, onTick, visualOptions={}) {
     const x=george.position.x,z=george.position.z;
     const displacement=p.previousX===null?0:Math.hypot(x-p.previousX,z-p.previousZ);
     p.previousX=x;p.previousZ=z;
-    if(!sleeping&&!swimming&&(forceFall||p.manualFall||(gradient>.85&&displacement>.06))&&p.mode==='upright'){
+    if(!sleeping&&!swimming&&(forceFall||p.manualFall)&&p.mode==='upright'){
       p.manualFall=false;p.mode='falling';p.fallTime=0;p.velocityY=0;p.leanVelocity=0;initialiseRagdoll();
     }
     const active=p.mode!=='upright';
@@ -835,7 +835,7 @@ export function mountIsland(element, onTick, visualOptions={}) {
       if(p.recovery>=2.4){p.lean=0;p.mode='upright';p.velocityY=0;ragdollParticles.clear();visualOptions.onAnimationStatus?.('Recovery complete — George is standing');}
     }else p.lean=THREE.MathUtils.damp(p.lean,0,8,dt);
     if((p.mode==='falling'||p.mode==='down')&&ragdollParticles.size)simulateRagdoll(dt);
-    adventurer.rotation.x=THREE.MathUtils.damp(adventurer.rotation.x,-p.lean,9,dt);
+    adventurer.rotation.x=THREE.MathUtils.damp(adventurer.rotation.x,p.mode==='upright'?0:-p.lean,12,dt);
     return active;
   };
   const loader=new GLTFLoader();
@@ -1176,9 +1176,11 @@ export function mountIsland(element, onTick, visualOptions={}) {
     const wantsRun=(manualAnimation==='fear_run'||(!manualAnimation&&frightened&&moved));
     const wantsWalk=(manualAnimation==='walk'||(!manualAnimation&&moved&&!sitting&&!pickingUp&&!rummaging&&!isChopping));
     const desiredAction=wantsRun?(runAction||walkAction||idleAction):wantsWalk?(walkAction||idleAction):idleAction||walkAction;
-    // Keep native GLB clip active; never stop it for unsupported custom poses.if(desiredAction&&desiredAction!==activeAction){activeAction?.fadeOut(.25);desiredAction.reset().fadeIn(.25).play();activeAction=desiredAction;}
+    // Keep native GLB clip active; never stop it for unsupported custom poses.
+    if(desiredAction&&desiredAction!==activeAction){activeAction?.fadeOut(.25);desiredAction.reset().fadeIn(.25).play();activeAction=desiredAction;}
     // Physics, terrain, and autonomous decisions continue; procedural IK disabled.
-    if(manualAnimation&&performance.now()>=manualUntil){const completed=manualAnimation;manualAnimation=null;manualDuration=0;manualStarted=0;if(!manualAuto)visualOptions.onAnimationStatus?.('Completed '+completed.replaceAll('_',' ')+' once — autonomous behaviour resumed');manualAuto=false;}// Custom spontaneous gestures disabled; default GLB clips retain skeletal control.const motorAction=bodyPhysics.mode==='recovering'?'get_up':manualAnimation&&bodyPhysics.mode==='upright'?manualAnimation:bodyPhysics.mode!=='upright'?'idle':isChopping?'chop':fighting?'fight_stance':frightened?'fear_run':rummaging?'rummage':pickingUp?'pickup':moved&&!sitting?'walk':survivalPose;
+    if(manualAnimation&&performance.now()>=manualUntil){const completed=manualAnimation;manualAnimation=null;manualDuration=0;manualStarted=0;if(!manualAuto)visualOptions.onAnimationStatus?.('Completed '+completed.replaceAll('_',' ')+' once — autonomous behaviour resumed');manualAuto=false;}// Custom spontaneous gestures disabled; default GLB clips retain skeletal control.
+    const motorAction=bodyPhysics.mode==='recovering'?'get_up':manualAnimation&&bodyPhysics.mode==='upright'?manualAnimation:bodyPhysics.mode!=='upright'?'idle':isChopping?'chop':fighting?'fight_stance':frightened?'fear_run':rummaging?'rummage':pickingUp?'pickup':moved&&!sitting?'walk':survivalPose;
     // Evaluate the axe's actual head-to-trunk distance only near the strike phase.
     // This is animation feedback; authoritative tree damage remains server controlled.
     let axeError=null;
