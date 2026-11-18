@@ -997,7 +997,7 @@ export function mountIsland(element, onTick, visualOptions={}) {
           const safeStart=resolveObstacleOverlap(x,z);george.position.x=safeStart.x;george.position.z=safeStart.z;george.position.y=height(safeStart.x,safeStart.z);
           george.userData.hasSynced=true;
           if(!initialCameraSynced){setDefaultGeorgeCamera();initialCameraSynced=true;}
-        }else if(delta>.04&&!crateActive){
+        }else if(delta>.04&&!crateActive&&bodyPhysics.mode==='upright'){
           // Catch up smoothly, bounded by a believable travel speed.
           // Avoid per-frame fixed distance increments (which cause FPS-dependent movement).
           const intent=String(sharedGeorge?.inventory?.current_goal||'')+' '+String(sharedGeorge?.inventory?.last_action||'');
@@ -1135,7 +1135,7 @@ export function mountIsland(element, onTick, visualOptions={}) {
       }
       georgeAnimations.setIKTargets(targets);
     }
-    const motorAction=isChopping?'chop':fighting?'fight_stance':frightened?'fear_run':rummaging?'rummage':pickingUp?'pickup':moved&&!sitting?'walk':survivalPose;
+    const motorAction=bodyPhysics.mode!=='upright'?'idle':isChopping?'chop':fighting?'fight_stance':frightened?'fear_run':rummaging?'rummage':pickingUp?'pickup':moved&&!sitting?'walk':survivalPose;
     // Evaluate the axe's actual head-to-trunk distance only near the strike phase.
     // This is animation feedback; authoritative tree damage remains server controlled.
     let axeError=null;
