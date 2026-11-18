@@ -1170,7 +1170,7 @@ export function mountIsland(element, onTick, visualOptions={}) {
     else if(goal.includes('build')||goal.includes('shelter'))survivalPose='build';
     else if(goal.includes('saw')||goal.includes('cut'))survivalPose='saw';
     else if(goal.includes('investigate'))survivalPose='look';
-    else if(!moved)survivalPose='think';
+    else if(!moved)survivalPose='idle';
     // Do not infer an eating/drinking animation merely from low needs: wait for an actual action.
     const desiredAction=manualAnimation?null:moved&&!sitting&&!pickingUp&&!rummaging&&!isChopping?walkAction:idleAction;
     if(manualAnimation&&activeAction){activeAction.stop();activeAction=null;}if(desiredAction&&desiredAction!==activeAction){activeAction?.fadeOut(.25);desiredAction.reset().fadeIn(.25).play();activeAction=desiredAction;}
@@ -1216,7 +1216,8 @@ export function mountIsland(element, onTick, visualOptions={}) {
         }
       }
     }
-    const motorFrame=georgeAnimations?.update(dt,bodyPhysics.mode==='recovering'?bodyPhysics.recovery:manualAnimation?Math.min((performance.now()-manualStarted)/1000,manualDuration/1000):elapsed,motorAction);
+    const nativeGait=!!activeAction&&((motorAction==='walk'&&activeAction===walkAction)||(motorAction==='idle'&&activeAction===idleAction));
+    const motorFrame=georgeAnimations?.update(dt,bodyPhysics.mode==='recovering'?bodyPhysics.recovery:manualAnimation?Math.min((performance.now()-manualStarted)/1000,manualDuration/1000):elapsed,motorAction,nativeGait);
     if(motorFrame?.feedback){
       const f=motorFrame.feedback;
       const errors=motorAction==='pickup'?[f.leftHandError,f.rightHandError]:motorAction==='walk'||motorAction==='fear_run'?[f.leftFootError,f.rightFootError]:motorAction==='chop'?[axeError]:[];
