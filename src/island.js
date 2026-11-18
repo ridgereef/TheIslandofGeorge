@@ -653,23 +653,46 @@ export function mountIsland(element, onTick, visualOptions={}) {
     const fox=gltf.scene;
     // Many downloadable fox GLBs include a presentation diorama. Keep the
     // rigged character, but discard non-character ground, grass and props.
-    const sceneryName=/ground|terrain|grass|bush|plant|flower|rock|stone|tree|base|platform|pedestal|diorama|environment|floor|landscape|clutter|decor/i;
-    const skinned=[];
-    fox.traverse(node=>{if(node.isSkinnedMesh)skinned.push(node);});
-    const animatedNames=new Set();
-    (gltf.animations||[]).forEach(clip=>clip.tracks.forEach(track=>animatedNames.add(track.name.split('.')[0])));
-    const scenery=[];
-    fox.traverse(node=>{
-      if(!node.isMesh||node.isSkinnedMesh)return;
-      const box=new THREE.Box3().setFromObject(node);
-      const span=box.getSize(new THREE.Vector3());
-      const name=[node.name,node.parent?.name].join(' ');
-      // Avoid removing unskinned eyes/fur; remove obvious diorama parts.
-      if(sceneryName.test(name)||(skinned.length>0&&span.x>2.5&&span.z>2.5&&span.y<span.x*.4)){
-        scenery.push(node);
+    // Isolate the actual animated animal from the download's static diorama.
+    // Grass can be unnamed, so relying on mesh names alone is insufficient.
+    const allMeshes=[];
+    fox.updateMatrixWorld(true);
+    fox.traverse(node=>{if(node.isMesh)allMeshes.push(node);});
+    const skinned=allMeshes.filter(node=>node.isSkinnedMesh);
+    const animatedNodeNames=new Set();
+    (gltf.animations||[]).forEach(clip=>clip.tracks.forEach(track=>{
+      animatedNodeNames.add(track.name.slice(0,track.name.lastIndexOf('.')));
+    }));
+    const isAnimatedMesh=node=>{
+      if(node.isSkinnedMesh)return true;
+      let current=node;
+      while(current&&current!==fox){
+        if(animatedNodeNames.has(current.name)||animatedNodeNames.has(current.uuid))return true;
+        current=current.parent;
       }
-    });
-    scenery.forEach(node=>node.parent?.remove(node));
+      return false;
+    };
+    const characterMeshes=allMeshes.filter(isAnimatedMesh);
+    const characterBox=new THREE.Box3();
+    characterMeshes.forEach(mesh=>characterBox.expandByObject(mesh));
+    const decorationNames=/ground|terrain|grass|bush|plant|flower|rock|stone|tree|base|platform|pedestal|diorama|environment|floor|landscape|clutter|decor|foliage|weed|shrub|soil|dirt/i;
+    const remove=[];
+    for(const mesh of allMeshes){
+      if(characterMeshes.includes(mesh))continue;
+      const meshBox=new THREE.Box3().setFromObject(mesh);
+      const size=meshBox.getSize(new THREE.Vector3());
+      const center=meshBox.getCenter(new THREE.Vector3());
+      const label=[mesh.name,mesh.parent?.name,mesh.material?.name].join(' ');
+      const outsideCharacter=!characterBox.isEmpty()&&(
+        center.x<characterBox.min.x-.15||center.x>characterBox.max.x+.15||
+        center.z<characterBox.min.z-.15||center.z>characterBox.max.z+.15||
+        center.y<characterBox.min.y-.15);
+      const groundLike=size.x>size.y*2&&size.z>size.y*2;
+      // With a skinned fox, any independent static prop is scenery, not anatomy.
+      if(skinned.length||decorationNames.test(label)||outsideCharacter||groundLike)remove.push(mesh);
+    }
+    remove.forEach(mesh=>mesh.parent?.remove(mesh));
+    console.info('Fox visual isolation:',{total:allMeshes.length,animated:characterMeshes.length,removed:remove.length});
     const bounds=new THREE.Box3().setFromObject(fox);
     const dimensions=bounds.getSize(new THREE.Vector3());
     if(!Number.isFinite(dimensions.y)||dimensions.y<.001)throw new Error('Fox model has invalid bounds');
@@ -679,7 +702,17 @@ export function mountIsland(element, onTick, visualOptions={}) {
     const center=scaledBounds.getCenter(new THREE.Vector3());
     fox.position.set(-center.x,-scaledBounds.min.y,-center.z);
     fox.traverse(node=>{if(node.isMesh){node.castShadow=true;node.receiveShadow=true;}});
-    const clips=gltf.animations||[];
+    // Prevent imported animation clips from translating/scaling the entire fox
+    // through the world. The authoritative dog position is handled by dogRoot.
+    const clips=(gltf.animations||[]).map(clip=>{
+      const tracks=clip.tracks.filter(track=>{
+        const dot=track.name.lastIndexOf('.');
+        const nodeName=track.name.slice(0,dot),property=track.name.slice(dot+1);
+        const rootNode=nodeName===fox.name||nodeName===fox.uuid||nodeName===gltf.scene.name;
+        return !(rootNode&&(property==='position'||property==='scale'));
+      });
+      return new THREE.AnimationClip(clip.name,clip.duration,tracks);
+    });
     const match=pattern=>clips.find(c=>pattern.test(c.name));
     foxClips={
       walk:match(/walk|trot|locomotion/i),
@@ -1106,7 +1139,7 @@ export function mountIsland(element, onTick, visualOptions={}) {
       if(foxMixer&&foxClips){
         const state=dogRoot.userData.behaviorState||'';
         const resting=/sleep|rest|sit|lie/.test(state);
-        const next=resting?(foxClips.rest||foxClips.idle):(targetDistance>4?(foxClips.run||foxClips.walk):(targetDistance>.12?(foxClips.walk||foxClips.run):foxClips.idle))||foxClips.idle;
+        const next=resting?(foxClips.rest||foxClips.idle):(speed>1.8?(foxClips.run||foxClips.walk):(speed>.12?(foxClips.walk||foxClips.run):foxClips.idle))||foxClips.idle;
         if(next){const action=foxMixer.clipAction(next);if(action!==foxAction){foxAction?.fadeOut(.2);action.reset().fadeIn(.2).play();foxAction=action;}}
       }
     }
