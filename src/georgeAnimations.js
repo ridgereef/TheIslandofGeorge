@@ -248,11 +248,11 @@ export function createGeorgeAnimationController(root) {
           const touch=smooth((t-.42)/.43)*(1-smooth((t-1.42)/.40));
           const shoulder=bones.get('UpperArm.R'),elbow=bones.get('LowerArm.R');
           const hand=bones.get('Hand.R'),head=bones.get('Head');
-          if(shoulder&&elbow&&hand&&head&&lift>.001){
+          if(shoulder&&elbow&&head&&lift>.001){
             root.updateMatrixWorld(true);
             const shoulderPos=shoulder.getWorldPosition(new THREE.Vector3());
             const elbowPos=elbow.getWorldPosition(new THREE.Vector3());
-            const wristPos=hand.getWorldPosition(new THREE.Vector3());
+            const wristPos=hand?hand.getWorldPosition(new THREE.Vector3()):elbow.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0,-.25,0));
             const headPos=head.getWorldPosition(new THREE.Vector3());
             const right=new THREE.Vector3(1,0,0).transformDirection(root.matrixWorld);
             const forward=new THREE.Vector3(0,0,1).transformDirection(root.matrixWorld);
@@ -281,10 +281,11 @@ export function createGeorgeAnimationController(root) {
             };
             pointBone(shoulder,elbowPos.clone().sub(shoulderPos),elbowGoal.clone().sub(shoulderPos),lift);
             const currentElbow=elbow.getWorldPosition(new THREE.Vector3());
-            const currentWrist=hand.getWorldPosition(new THREE.Vector3());
+            const currentWrist=hand?hand.getWorldPosition(new THREE.Vector3()):elbow.localToWorld(new THREE.Vector3(0,-lowerLength,0));
             // Clamp the target to the forearm's reachable sphere.
             const wristGoal=temple.clone().sub(currentElbow).clampLength(.03,lowerLength*.98).add(currentElbow);
-            pointBone(elbow,currentWrist.sub(currentElbow),wristGoal.sub(currentElbow),touch);
+            if(hand)pointBone(elbow,currentWrist.sub(currentElbow),wristGoal.sub(currentElbow),touch);
+            else offset('LowerArm.R',-1.05*touch,0,0,1);
             // Joint limits here were defined for assumed Blender local axes and
             // were cancelling the world-space reach on this Adventurer rig.
             // Keep the target anatomical: elbow out/front, wrist near temple.
