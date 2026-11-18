@@ -78,3 +78,13 @@ footer{color:#647a80}
 .scene-panel{position:relative}
 .scene-daylight-toggle{position:absolute;z-index:35;top:50px;left:12px;pointer-events:auto;box-shadow:0 2px 12px #0005;background:#fff}
 @media(max-width:650px){.scene-daylight-toggle{top:46px;left:8px}}
+
+/* Live positions over the discovered memory map */
+.memory-rabbit-dot,.memory-george-dot{position:absolute;transform:translate(-50%,-50%);border-radius:50%;pointer-events:auto}
+.memory-rabbit-dot{width:5px;height:5px;background:#76533b;border:1px solid #fff9;z-index:5}
+.memory-george-dot{width:12px;height:12px;background:#1785ee;border:2px solid white;box-shadow:0 0 0 3px #1785ee35,0 1px 6px #174b6b70;z-index:8}
+.memory-map-legend{display:flex;flex-wrap:wrap;gap:16px;margin-top:9px;font-size:11px;color:#526b70}
+.memory-map-legend span{display:inline-flex;align-items:center;gap:6px}
+.memory-map-legend i{display:inline-block;border-radius:50%;flex:none}
+.memory-legend-george{width:10px;height:10px;background:#1785ee;border:1px solid white;box-shadow:0 0 0 1px #1785ee}
+.memory-legend-rabbit{width:6px;height:6px;background:#76533b}
