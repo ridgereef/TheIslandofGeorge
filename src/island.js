@@ -646,7 +646,7 @@ export function mountIsland(element, onTick, visualOptions={}) {
   dogRoot.visible=false;
   // The fox is visual-only: dog AI, position and survival remain authoritative.
   // Keep the primitive as a fallback if the GLB is unavailable (e.g. LFS pointer).
-  let foxMixer=null,foxClips=null,foxAction=null,foxFacingOffset=Math.PI/2,foxVisual=null,foxFeetOffset=0,foxGroundSample=0;
+  let foxMixer=null,foxClips=null,foxAction=null,foxFacingOffset=-Math.PI/2,foxVisual=null,foxFeetOffset=0,foxGroundSample=0;
   const foxUrl='/models/stylized_fox__rigged__animated.glb';
   const foxLoader=new GLTFLoader();
   foxLoader.load(foxUrl,gltf=>{
