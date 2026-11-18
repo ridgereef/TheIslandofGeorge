@@ -5,6 +5,31 @@ import * as THREE from 'three';
 export function createGeorgeAnimationController(root) {
   const bones = new Map();
   root.traverse(node => { if (node.isBone) bones.set(node.name, node); });
+  // Resolve naming differences across Blender, Mixamo and glTF armatures.
+  const originalBoneNames=[...bones.keys()];
+  const normalized=name=>String(name).toLowerCase().replace(/^(mixamorig|armature|rigify|def)[.:_ -]*/,'').replace(/[^a-z0-9]/g,'');
+  const aliases={
+    Hips:['hips','pelvis','root','hip'],
+    Spine:['spine','spine1','spine01','spine2','chest','upperchest','torso'],
+    Neck:['neck','neck1'],Head:['head'],
+    'UpperArm.L':['leftarm','leftupperarm','upperarml','lupperarm','armleft'],
+    'UpperArm.R':['rightarm','rightupperarm','upperarmr','rupperarm','armright'],
+    'LowerArm.L':['leftforearm','leftlowerarm','lowerarml','forearml','lforearm'],
+    'LowerArm.R':['rightforearm','rightlowerarm','lowerarmr','forearmr','rforearm'],
+    'Hand.L':['lefthand','handl','lhand'],'Hand.R':['righthand','handr','rhand'],
+    'UpperLeg.L':['leftupleg','leftupperleg','leftthigh','thighl','upperlegl'],
+    'UpperLeg.R':['rightupleg','rightupperleg','rightthigh','thighr','upperlegr'],
+    'LowerLeg.L':['leftleg','leftlowerleg','leftshin','shinl','lowerlegl'],
+    'LowerLeg.R':['rightleg','rightlowerleg','rightshin','shinr','lowerlegr'],
+    'Foot.L':['leftfoot','footl'],'Foot.R':['rightfoot','footr']
+  };
+  for(const [canonical,options] of Object.entries(aliases)){
+    if(bones.has(canonical))continue;
+    const candidates=[normalized(canonical),...options.map(normalized)];
+    const found=[...bones.entries()].find(([name])=>candidates.includes(normalized(name)));
+    if(found)bones.set(canonical,found[1]);
+  }
+  const rigReport={boneCount:originalBoneNames.length,hasHips:bones.has('Hips'),hasArms:bones.has('UpperArm.L')&&bones.has('UpperArm.R'),boneNames:originalBoneNames.slice(0,80)};
   const neutral = new THREE.Quaternion();
   const bindRotations = new Map([...bones].map(([name,bone])=>[name,bone.quaternion.clone()]));
   const euler = new THREE.Euler();
@@ -145,6 +170,7 @@ export function createGeorgeAnimationController(root) {
   }
   return {
     hasRig: bones.has('Hips') && bones.has('UpperArm.L'),
+    rigReport,
     setIKTargets(next){targets=next||{};},
     getSkeletalFeedback(){return {...feedback};},
     setLearnedSkills(skills){learnedSkills=skills&&typeof skills==='object'?skills:{};},
