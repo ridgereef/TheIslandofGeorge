@@ -1145,14 +1145,30 @@ export function mountIsland(element, onTick, visualOptions={}) {
       const speed=Math.hypot(dx,dz)/Math.max(dt,.001);
       const toTargetX=dest.x-dogRoot.position.x,toTargetZ=dest.z-dogRoot.position.z;
       const targetDistance=Math.hypot(toTargetX,toTargetZ);
-      if(targetDistance>.08&&speed>.025){
-        // GLB fox faces forward along -Z; orient towards server movement target.
-        // Fox GLB's muzzle points along local +X, not Three.js -Z.
-        // Face the actual travel vector so it never walks backwards.
-        const desiredYaw=Math.atan2(-dx,-dz)+foxFacingOffset;
+      // Face the actual direction of travel. While stopped, keep looking toward
+      // the destination instead of snapping to an unrelated idle orientation.
+      const headingX=speed>.025?dx:toTargetX;
+      const headingZ=speed>.025?dz:toTargetZ;
+      if(Math.hypot(headingX,headingZ)>.001){
+        // The fox model's local forward axis is +X, unlike Three.js -Z.
+        const desiredYaw=Math.atan2(-headingX,-headingZ)+foxFacingOffset;
         const yawError=Math.atan2(Math.sin(desiredYaw-dogRoot.rotation.y),Math.cos(desiredYaw-dogRoot.rotation.y));
-        dogRoot.rotation.y+=yawError*Math.min(1,dt*7);
+        dogRoot.rotation.y+=yawError*Math.min(1,dt*9);
       }
+      // Follow the island's slope as well as its height. Sample ground along
+      // travel direction and perpendicular to it, then lean the whole fox rig.
+      // Smooth and clamp tilt to avoid sudden flips on sharp terrain edges.
+      dogRoot.rotation.order='YXZ';
+      const forwardX=Math.sin(dogRoot.rotation.y-foxFacingOffset)*-1;
+      const forwardZ=Math.cos(dogRoot.rotation.y-foxFacingOffset)*-1;
+      const rightX=-forwardZ,rightZ=forwardX;
+      const slopeStep=.9;
+      const riseForward=height(px+forwardX*slopeStep,pz+forwardZ*slopeStep)-height(px-forwardX*slopeStep,pz-forwardZ*slopeStep);
+      const riseRight=height(px+rightX*slopeStep,pz+rightZ*slopeStep)-height(px-rightX*slopeStep,pz-rightZ*slopeStep);
+      const desiredPitch=THREE.MathUtils.clamp(Math.atan2(riseForward,2*slopeStep),-.32,.32);
+      const desiredRoll=THREE.MathUtils.clamp(Math.atan2(riseRight,2*slopeStep),-.24,.24);
+      dogRoot.rotation.x=THREE.MathUtils.damp(dogRoot.rotation.x,desiredPitch,5,dt);
+      dogRoot.rotation.z=THREE.MathUtils.damp(dogRoot.rotation.z,desiredRoll,5,dt);
       if(foxMixer&&foxClips){
         const next=resting?(foxClips.rest||foxClips.idle):(speed>2.5?(foxClips.run||foxClips.walk):(speed>.08?(foxClips.walk||foxClips.run):foxClips.idle))||foxClips.idle;
         if(next){const action=foxMixer.clipAction(next);if(action!==foxAction){foxAction?.fadeOut(.2);action.reset().fadeIn(.2).play();foxAction=action;}}
