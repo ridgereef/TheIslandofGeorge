@@ -30,7 +30,7 @@ export function mountIsland(element, onTick, visualOptions={}) {
     cameraSubject={type,id:String(id),x:nx,z:nz};
     setFollow(true);
     const destination=new THREE.Vector3(nx,Math.max(0,height(nx,nz))+1.2,nz);
-    const offset=camera.position.clone().sub(controls.target).normalize().multiplyScalar(13).add(new THREE.Vector3(0,4,0));
+    const offset=new THREE.Vector3(0,5,13);
     cameraFlight={start:performance.now(),fromCamera:camera.position.clone(),fromTarget:controls.target.clone(),toTarget:destination,toCamera:destination.clone().add(offset)};
   };
   const onCreatureFocus=e=>{const d=e.detail||{};focusCreature(d.type,d.id,d.x,d.z)};
@@ -624,7 +624,7 @@ export function mountIsland(element, onTick, visualOptions={}) {
   for(const z of [-.22,.22]){const ear=new THREE.Mesh(new THREE.ConeGeometry(.17,.43,7),dogFur);ear.position.set(1.01,1.45,z);dogRoot.add(ear)}
   dogRoot.visible=false;
   let dogRefresh=null;
-  const loadDog=()=>{if(!itemUrl||!itemKey)return;fetch(itemUrl+'/rest/v1/island_dog_status?select=id,x,z,health,state,companion',{headers:{apikey:itemKey,Authorization:'Bearer '+itemKey}}).then(r=>r.ok?r.json():[]).then(rows=>{const dog=rows[0];if(!dog){dogRoot.visible=false;return;}dogRoot.visible=Number(dog.health)>0;dogRoot.userData.destination=new THREE.Vector3(Number(dog.x),0,Number(dog.z));if(cameraSubject.type==='dog'&&cameraSubject.id===String(dog.id)){cameraSubject.x=Number(dog.x);cameraSubject.z=Number(dog.z)}}).catch(()=>{});};
+  const loadDog=()=>{if(!itemUrl||!itemKey)return;fetch(itemUrl+'/rest/v1/island_dog_status?select=id,x,z,health,state,companion',{headers:{apikey:itemKey,Authorization:'Bearer '+itemKey}}).then(r=>r.ok?r.json():[]).then(rows=>{const dog=rows[0];if(!dog){dogRoot.visible=false;return;}const dogX=Number(dog.x),dogZ=Number(dog.z);if(!Number.isFinite(dogX)||!Number.isFinite(dogZ)){dogRoot.visible=false;return;}dogRoot.visible=Number(dog.health)>0;if(!dogRoot.userData.destination){dogRoot.position.set(dogX,height(dogX,dogZ),dogZ)}dogRoot.userData.destination=new THREE.Vector3(dogX,0,dogZ);if(cameraSubject.type==='dog'&&cameraSubject.id===String(dog.id)){cameraSubject.x=dogX;cameraSubject.z=dogZ}}).catch(()=>{});};
   loadDog();dogRefresh=window.setInterval(loadDog,5000);
   // One persistent reddish clay outcrop, made from a compact cluster of rocks.
   const clayRoot=new THREE.Group();scene.add(clayRoot);
@@ -1056,11 +1056,12 @@ export function mountIsland(element, onTick, visualOptions={}) {
         const rabbit=rabbitMeshes.get(cameraSubject.id);
         if(rabbit)subjectPosition.copy(rabbit.group.position).add(new THREE.Vector3(0,.5,0));
         else subjectPosition.set(cameraSubject.x,height(cameraSubject.x,cameraSubject.z)+1,cameraSubject.z);
-      }else if(cameraSubject.type==='dog')subjectPosition.set(dogRoot.position.x,dogRoot.position.y+1.3,dogRoot.position.z);
+      }else if(cameraSubject.type==='dog')subjectPosition.set(dogRoot.visible?dogRoot.position.x:cameraSubject.x,(dogRoot.visible?dogRoot.position.y:height(cameraSubject.x,cameraSubject.z))+1.3,dogRoot.visible?dogRoot.position.z:cameraSubject.z);
       if(cameraFlight){
         const progress=THREE.MathUtils.clamp((performance.now()-cameraFlight.start)/1600,0,1);
         const eased=progress*progress*(3-2*progress);
         cameraFlight.toTarget.copy(subjectPosition);
+        cameraFlight.toCamera.copy(subjectPosition).add(new THREE.Vector3(0,5,13));
         camera.position.lerpVectors(cameraFlight.fromCamera,cameraFlight.toCamera,eased);
         controls.target.lerpVectors(cameraFlight.fromTarget,cameraFlight.toTarget,eased);
         if(progress>=1)cameraFlight=null;
