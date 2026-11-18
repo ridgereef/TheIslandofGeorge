@@ -736,7 +736,7 @@ export function mountIsland(element, onTick, visualOptions={}) {
   let adventurer=null,adventurerMixer=null,walkAction=null,idleAction=null,activeAction=null,georgeAnimations=null;
   // Lightweight active ragdoll: gravity-driven centre of mass, spring/damped
   // torso rotation and independently settling limbs. No external physics engine.
-  let manualAnimation=null;let manualUntil=0;let manualStarted=0;let nextGesture=performance.now()+ (12+Math.random()*16)*60000;const triggerManualAnimation=(action)=>{if(!['scratch_head','wipe_brow','knock_down','walk','fear_run','pickup','chop'].includes(action))return false;if(action==='knock_down'){if(!adventurer||bodyPhysics.mode!=='upright')return false;bodyPhysics.manualFall=true;manualAnimation=null;return true;}manualAnimation=action;manualStarted=performance.now();manualUntil=performance.now()+ (action==='chop'?2600:action==='walk'||action==='fear_run'?3200:action==='pickup'?2200:1900);return true;};window.__georgeManualAnimation=triggerManualAnimation;const bodyPhysics={massKg:78,gravity:9.81,centreHeight:1.15,velocityY:0,lean:0,leanVelocity:0,fallTime:0,recovery:0,mode:'upright',previousX:null,previousZ:null};
+  let manualAnimation=null;let manualUntil=0;let manualStarted=0;let nextGesture=performance.now()+ (12+Math.random()*16)*60000;const triggerManualAnimation=(action)=>{if(!['scratch_head','wipe_brow','knock_down','walk','fear_run','pickup','chop'].includes(action))return false;if(!adventurer||!georgeAnimations?.hasRig){visualOptions.onAnimationStatus?.('Character rig not ready — animation cannot play');return false;}if(action==='knock_down'){if(bodyPhysics.mode!=='upright')return false;bodyPhysics.manualFall=true;manualAnimation=null;visualOptions.onAnimationStatus?.('Knock down queued — applying fall physics');return true;}manualAnimation=action;manualStarted=performance.now();manualUntil=performance.now()+ (action==='chop'?4000:action==='walk'||action==='fear_run'?4000:action==='pickup'?3200:3000);visualOptions.onAnimationStatus?.('Playing '+action.replaceAll('_',' ')+' — autonomous movement paused');return true;};window.__georgeManualAnimation=triggerManualAnimation;const bodyPhysics={massKg:78,gravity:9.81,centreHeight:1.15,velocityY:0,lean:0,leanVelocity:0,fallTime:0,recovery:0,mode:'upright',previousX:null,previousZ:null};
   // Articulated particle ragdoll. Each anatomical segment has a mass,
   // Verlet momentum, a distance joint and a terrain collision radius.
   // The skeleton drives the visible GLB through constrained local rotations.
@@ -885,7 +885,7 @@ export function mountIsland(element, onTick, visualOptions={}) {
     george.children.forEach(child=>{if(child!==adventurer)child.visible=false});
     adventurer.traverse(obj=>{if(obj.isMesh){obj.castShadow=true;obj.receiveShadow=true}});
     adventurerMixer=new THREE.AnimationMixer(adventurer);
-    georgeAnimations=createGeorgeAnimationController(adventurer);georgeAnimations?.setLearnedSkills(learnedMotorSkills);attachAxe();
+    georgeAnimations=createGeorgeAnimationController(adventurer);visualOptions.onAnimationStatus?.(georgeAnimations.hasRig?'Character rig ready — tap an animation':'Character loaded but required skeleton bones missing');georgeAnimations?.setLearnedSkills(learnedMotorSkills);attachAxe();
     // Root-motion position tracks can drive the entire character below terrain.
     // The shared world coordinates own translation; animation clips own limb motion.
     const findClip=name=>{
@@ -911,7 +911,7 @@ export function mountIsland(element, onTick, visualOptions={}) {
     if(idle)idleAction=adventurerMixer.clipAction(idle);
     activeAction=walkAction||idleAction;
     activeAction?.play();
-  },undefined,error=>{console.warn('Adventurer model not available; showing temporary character.',error)});
+  },undefined,error=>{console.warn('Adventurer model not available; showing temporary character.',error);visualOptions.onAnimationStatus?.('Adventurer model failed to load — animation unavailable')});
 
   setDefaultGeorgeCamera();
   // Wall-clock driven lighting: reloads and visitors share the same NZ local time.
@@ -1053,7 +1053,7 @@ export function mountIsland(element, onTick, visualOptions={}) {
           const safeStart=resolveObstacleOverlap(x,z);george.position.x=safeStart.x;george.position.z=safeStart.z;george.position.y=height(safeStart.x,safeStart.z);
           george.userData.hasSynced=true;
           if(!initialCameraSynced){setDefaultGeorgeCamera();initialCameraSynced=true;}
-        }else if(delta>.04&&!crateActive&&bodyPhysics.mode==='upright'){
+        }else if(delta>.04&&!crateActive&&bodyPhysics.mode==='upright'&&!manualAnimation){
           // Catch up smoothly, bounded by a believable travel speed.
           // Avoid per-frame fixed distance increments (which cause FPS-dependent movement).
           const intent=String(sharedGeorge?.inventory?.current_goal||'')+' '+String(sharedGeorge?.inventory?.last_action||'');
@@ -1164,8 +1164,8 @@ export function mountIsland(element, onTick, visualOptions={}) {
     else if(goal.includes('investigate'))survivalPose='look';
     else if(!moved)survivalPose='think';
     // Do not infer an eating/drinking animation merely from low needs: wait for an actual action.
-    const desiredAction=manualAnimation?idleAction:moved&&!sitting&&!pickingUp&&!rummaging&&!isChopping?walkAction:idleAction;
-    if(desiredAction&&desiredAction!==activeAction){activeAction?.fadeOut(.25);desiredAction.reset().fadeIn(.25).play();activeAction=desiredAction;}
+    const desiredAction=manualAnimation?null:moved&&!sitting&&!pickingUp&&!rummaging&&!isChopping?walkAction:idleAction;
+    if(manualAnimation&&activeAction){activeAction.stop();activeAction=null;}if(desiredAction&&desiredAction!==activeAction){activeAction?.fadeOut(.25);desiredAction.reset().fadeIn(.25).play();activeAction=desiredAction;}
     // Mixer updates first, then the procedural arm/leg/head offsets layer on top.
     // Generate physically grounded end-effector targets in world coordinates.
     // Feet track local terrain; hands reach towards a point in front of George.
@@ -1191,7 +1191,7 @@ export function mountIsland(element, onTick, visualOptions={}) {
       }
       georgeAnimations.setIKTargets(targets);
     }
-    if(manualAnimation&&performance.now()>manualUntil)manualAnimation=null;if(!manualAnimation&&bodyPhysics.mode==='upright'&&performance.now()>nextGesture){nextGesture=performance.now()+(12+Math.random()*16)*60000;if(!isChopping&&!fighting&&!frightened&&!rummaging&&!pickingUp&&!swimming){manualAnimation=temperature>24&&Math.random()<.75?'wipe_brow':'scratch_head';manualUntil=performance.now()+1800;}}const motorAction=manualAnimation&&bodyPhysics.mode==='upright'?manualAnimation:bodyPhysics.mode!=='upright'?'idle':isChopping?'chop':fighting?'fight_stance':frightened?'fear_run':rummaging?'rummage':pickingUp?'pickup':moved&&!sitting?'walk':survivalPose;
+    if(manualAnimation&&performance.now()>manualUntil){manualAnimation=null;visualOptions.onAnimationStatus?.('Animation complete — autonomous movement resumed');}if(!manualAnimation&&bodyPhysics.mode==='upright'&&performance.now()>nextGesture){nextGesture=performance.now()+(12+Math.random()*16)*60000;if(!isChopping&&!fighting&&!frightened&&!rummaging&&!pickingUp&&!swimming){manualAnimation=temperature>24&&Math.random()<.75?'wipe_brow':'scratch_head';manualUntil=performance.now()+1800;}}const motorAction=manualAnimation&&bodyPhysics.mode==='upright'?manualAnimation:bodyPhysics.mode!=='upright'?'idle':isChopping?'chop':fighting?'fight_stance':frightened?'fear_run':rummaging?'rummage':pickingUp?'pickup':moved&&!sitting?'walk':survivalPose;
     // Evaluate the axe's actual head-to-trunk distance only near the strike phase.
     // This is animation feedback; authoritative tree damage remains server controlled.
     let axeError=null;
