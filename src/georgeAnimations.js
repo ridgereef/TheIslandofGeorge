@@ -222,6 +222,12 @@ export function createGeorgeAnimationController(root) {
           if(bone&&base)bone.quaternion.copy(base);
         }
       }
+      // Re-establish bind pose on limbs every frame before procedural offsets.
+      // The imported idle clip does not key every leg and wrist consistently.
+      for(const name of ['UpperLeg.L','UpperLeg.R','LowerLeg.L','LowerLeg.R','Foot.L','Foot.R','UpperArm.L','UpperArm.R','LowerArm.L','LowerArm.R','Hand.L','Hand.R']){
+        const bone=bones.get(name),base=bindRotations.get(name);
+        if(bone&&base)bone.quaternion.copy(base);
+      }
       // Explicitly reset the skull/neck every frame, including idle and walking.
       // This prevents an embedded animation or prior pose from leaving a swivel.
       aimHead(0,0,weight);
