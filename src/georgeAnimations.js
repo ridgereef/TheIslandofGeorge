@@ -215,7 +215,7 @@ export function createGeorgeAnimationController(root) {
       const t=seconds;
       // When a native GLB walk/idle clip is playing, it owns the entire skeleton.
       // Never overwrite its keyed legs/arms with bind-pose resets or procedural gait.
-      if(nativeClip && (target==='walk'||target==='fear_run'||target==='idle')){
+      if(target==='walk'||target==='fear_run'||(nativeClip&&target==='idle')){
         current=target;weight=0;feedback.action=target;
         return {action:target,feedback:{...feedback}};
       }
