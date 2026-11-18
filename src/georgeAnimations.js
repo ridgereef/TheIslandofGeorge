@@ -128,14 +128,14 @@ export function createGeorgeAnimationController(root) {
   function applyKinematics(action){
     feedback.action=action;feedback.leftHandError=null;feedback.rightHandError=null;
     feedback.leftFootError=null;feedback.rightFootError=null;feedback.jointViolations=0;feedback.balanceError=null;feedback.footSlip=null;
-    const enabled=action==='pickup'||action==='walk'||action==='fear_run'||action==='scratch_head'||action==='wipe_brow'||action==='get_up';
+    const enabled=action==='pickup'; // Disable unstable walking/gesture CCD until calibrated to actual rig lengths.
     if(!enabled)return;
     for(const side of ['L','R']){
-      if(['pickup','scratch_head','wipe_brow','get_up'].includes(action)&&targets[side==='L'?'leftHand':'rightHand']){
+      if(action==='pickup'&&targets[side==='L'?'leftHand':'rightHand']){
         const error=solveChain(['UpperArm.'+side,'LowerArm.'+side,'Hand.'+side],targets[side==='L'?'leftHand':'rightHand']);
         feedback[side==='L'?'leftHandError':'rightHandError']=error;
       }
-      if((action==='walk'||action==='fear_run')&&targets[side==='L'?'leftFoot':'rightFoot']){
+      if(false&&(action==='walk'||action==='fear_run')&&targets[side==='L'?'leftFoot':'rightFoot']){
         const error=solveChain(['UpperLeg.'+side,'LowerLeg.'+side,'Foot.'+side],targets[side==='L'?'leftFoot':'rightFoot']);
         feedback[side==='L'?'leftFootError':'rightFootError']=error;
       }
@@ -195,8 +195,8 @@ export function createGeorgeAnimationController(root) {
       aimHead(0,0,weight);
       const pulse=Math.sin(t*5),slow=Math.sin(t*1.3);
       switch(current) {
-        case 'scratch_head': {const p=Math.sin(THREE.MathUtils.clamp(t/1.9,0,1)*Math.PI);offset('UpperArm.R',-.48*p,0,.42*p,1);offset('LowerArm.R',-1.35*p,0,0,1);aimHead(.08*p,-.10*p);break;}
-        case 'wipe_brow': {const p=Math.sin(THREE.MathUtils.clamp(t/1.9,0,1)*Math.PI);offset('UpperArm.R',-.55*p,0,.4*p,1);offset('LowerArm.R',-1.3*p,0,0,1);aimHead(-.06*p,0);break;}
+        case 'scratch_head': {const p=Math.sin(THREE.MathUtils.clamp(t/1.9,0,1)*Math.PI);offset('UpperArm.R',-.35*p,0,-.20*p,1);offset('LowerArm.R',-.85*p,0,0,1);aimHead(.08*p,-.10*p);break;}
+        case 'wipe_brow': {const p=Math.sin(THREE.MathUtils.clamp(t/1.9,0,1)*Math.PI);offset('UpperArm.R',-.42*p,0,-.15*p,1);offset('LowerArm.R',-.9*p,0,0,1);aimHead(-.06*p,0);break;}
         case 'get_up': {const phase=THREE.MathUtils.clamp(t/2.4,0,1);const push=phase<.48?1:Math.max(0,1-(phase-.48)/.52);const crouch=phase<.5?1:Math.max(0,1-(phase-.5)*2);offset('Spine',.35*crouch);offset('Hips',.22*crouch);for(const side of ['L','R']){const sign=side==='L'?-1:1;offset('UpperArm.'+side,-.95*push,0,sign*.25*push,1);offset('LowerArm.'+side,-.65*push,0,0,1);offset('UpperLeg.'+side,-.8*crouch,0,sign*.08,1);offset('LowerLeg.'+side,1.15*crouch,0,0,1);}break;}
         case 'walk': {
           // Fallback gait if the GLB has no identifiable walking clip.
@@ -334,17 +334,6 @@ export function createGeorgeAnimationController(root) {
         case 'look':
           aimHead(.08*Math.sin(t*.7),.30*slow);
           break;
-      }
-      // Target hands in world space so they reach the face from outside the torso,
-      // rather than crossing through George's chest with fixed Euler rotations.
-      if((current==='scratch_head'||current==='wipe_brow')&&bones.has('Hand.R')&&bones.has('Head')){
-        root.updateMatrixWorld(true);
-        const head=bones.get('Head').getWorldPosition(new THREE.Vector3());
-        const right=new THREE.Vector3(1,0,0).transformDirection(root.matrixWorld);
-        const up=new THREE.Vector3(0,1,0).transformDirection(root.matrixWorld);
-        const front=new THREE.Vector3(0,0,1).transformDirection(root.matrixWorld);
-        const goal=head.clone().addScaledVector(right,current==='scratch_head'?.14:.02).addScaledVector(up,current==='scratch_head'?.14:.02).addScaledVector(front,.17);
-        targets={...targets,rightHand:goal};
       }
       applyKinematics(current);
       return {action:current,weight,feedback:{...feedback}};
