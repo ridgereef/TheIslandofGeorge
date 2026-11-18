@@ -573,6 +573,10 @@ export function mountIsland(element, onTick, visualOptions={}) {
     },undefined,error=>console.warn('Island item model could not load:',file,error));
   }
   const itemUrl=import.meta.env.VITE_SUPABASE_URL,itemKey=import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+  // Learned motor parameters are persisted server-side and safely clamped by the rig controller.
+  let learnedMotorSkills={};
+  const refreshMotorSkills=()=>{if(!itemUrl||!itemKey)return;fetch(itemUrl+'/rest/v1/george_motor_skills?select=skill,parameters',{headers:{apikey:itemKey,Authorization:'Bearer '+itemKey}}).then(r=>r.ok?r.json():[]).then(rows=>{learnedMotorSkills=Object.fromEntries(rows.filter(r=>r&&r.skill&&r.parameters).map(r=>[r.skill,r.parameters]));georgeAnimations?.setLearnedSkills(learnedMotorSkills)}).catch(error=>console.warn('Motor skills unavailable:',error));};
+  refreshMotorSkills();const motorSkillRefresh=window.setInterval(refreshMotorSkills,60000);
   // Rabbits are server-simulated; these meshes only display Supabase snapshots.
   const rabbitRoot=new THREE.Group();scene.add(rabbitRoot);
   const rabbitBody=new THREE.SphereGeometry(.75,10,8);
@@ -760,7 +764,7 @@ export function mountIsland(element, onTick, visualOptions={}) {
     george.children.forEach(child=>{if(child!==adventurer)child.visible=false});
     adventurer.traverse(obj=>{if(obj.isMesh){obj.castShadow=true;obj.receiveShadow=true}});
     adventurerMixer=new THREE.AnimationMixer(adventurer);
-    georgeAnimations=createGeorgeAnimationController(adventurer);attachAxe();
+    georgeAnimations=createGeorgeAnimationController(adventurer);georgeAnimations?.setLearnedSkills(learnedMotorSkills);attachAxe();
     // Root-motion position tracks can drive the entire character below terrain.
     // The shared world coordinates own translation; animation clips own limb motion.
     const findClip=name=>{
@@ -1067,5 +1071,5 @@ export function mountIsland(element, onTick, visualOptions={}) {
         if(progress>=1)cameraFlight=null;
       }else{const delta=subjectPosition.sub(controls.target).multiplyScalar(1-Math.exp(-dt*3.5));controls.target.add(delta);camera.position.add(delta)}
     }controls.update();constrainCamera();controls.update();renderer.render(scene,camera);if(elapsed-last>2){last=elapsed;onTick?.({daylight,phase:cycle,georgeX:george.position.x,georgeZ:george.position.z,weather:weatherLabel,temperature:Math.round(temperature),thermal,swimming,wetness:Math.round(wetness*100),weatherSource:weather.source||'Simulated fallback',wind:Math.round(weather.wind||0),freshwaterNearby:freshwaterAt(george.position.x,george.position.z),georgeMoving:moved,sitting,atCamp:Math.hypot(george.position.x,george.position.z)<9,resting:resting&&Math.hypot(george.position.x,george.position.z)<9})}};
-  animate();return ()=>{disposed=true;itemsDisposed=true;if(rabbitRefresh!==null)clearInterval(rabbitRefresh);if(dogRefresh!==null)clearInterval(dogRefresh);if(fishRefresh!==null)clearInterval(fishRefresh);if(itemRefresh!==null)clearInterval(itemRefresh);if(cutTreeRefresh!==null)clearInterval(cutTreeRefresh);if(regrowthRefresh!==null)clearInterval(regrowthRefresh);if(carriedLogRefresh!==null)clearInterval(carriedLogRefresh);if(eventRefresh!==null)clearInterval(eventRefresh);if(sharedRefresh!==null)clearInterval(sharedRefresh);if(crateEventRefresh!==null)clearInterval(crateEventRefresh);if(cratePositionRefresh!==null)clearInterval(cratePositionRefresh);cancelAnimationFrame(frame);observer.disconnect();renderer.domElement.removeEventListener('pointerdown',onDown);window.removeEventListener('pointerup',onUp);window.removeEventListener('keydown',onKeyDown);window.removeEventListener('keyup',onKeyUp);window.removeEventListener('blur',onBlur);window.removeEventListener('island-focus-creature',onCreatureFocus);actions.remove();controls.dispose();renderer.dispose();renderer.domElement.remove();scene.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material){const mats=Array.isArray(o.material)?o.material:[o.material];mats.forEach(m=>m.dispose())}})};
+  animate();return ()=>{disposed=true;itemsDisposed=true;clearInterval(motorSkillRefresh);if(rabbitRefresh!==null)clearInterval(rabbitRefresh);if(dogRefresh!==null)clearInterval(dogRefresh);if(fishRefresh!==null)clearInterval(fishRefresh);if(itemRefresh!==null)clearInterval(itemRefresh);if(cutTreeRefresh!==null)clearInterval(cutTreeRefresh);if(regrowthRefresh!==null)clearInterval(regrowthRefresh);if(carriedLogRefresh!==null)clearInterval(carriedLogRefresh);if(eventRefresh!==null)clearInterval(eventRefresh);if(sharedRefresh!==null)clearInterval(sharedRefresh);if(crateEventRefresh!==null)clearInterval(crateEventRefresh);if(cratePositionRefresh!==null)clearInterval(cratePositionRefresh);cancelAnimationFrame(frame);observer.disconnect();renderer.domElement.removeEventListener('pointerdown',onDown);window.removeEventListener('pointerup',onUp);window.removeEventListener('keydown',onKeyDown);window.removeEventListener('keyup',onKeyUp);window.removeEventListener('blur',onBlur);window.removeEventListener('island-focus-creature',onCreatureFocus);actions.remove();controls.dispose();renderer.dispose();renderer.domElement.remove();scene.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material){const mats=Array.isArray(o.material)?o.material:[o.material];mats.forEach(m=>m.dispose())}})};
 }
