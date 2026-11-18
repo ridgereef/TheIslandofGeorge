@@ -645,7 +645,7 @@ export function mountIsland(element, onTick, visualOptions={}) {
   for(const z of [-.22,.22]){const ear=new THREE.Mesh(new THREE.ConeGeometry(.17,.43,7),dogFur);ear.position.set(1.01,1.45,z);dogRoot.add(ear)}
   dogRoot.visible=false;
   let dogRefresh=null;
-  const loadDog=()=>{if(!itemUrl||!itemKey)return;fetch(itemUrl+'/rest/v1/island_dog_status?select=id,x,z,health,state,companion',{headers:{apikey:itemKey,Authorization:'Bearer '+itemKey}}).then(r=>r.ok?r.json():[]).then(rows=>{const dog=rows[0];if(!dog){dogRoot.visible=false;return;}const dogX=Number(dog.x),dogZ=Number(dog.z);if(!Number.isFinite(dogX)||!Number.isFinite(dogZ)){dogRoot.visible=false;return;}dogRoot.visible=Number(dog.health)>0;if(!dogRoot.userData.destination){dogRoot.position.set(dogX,height(dogX,dogZ),dogZ)}dogRoot.userData.destination=new THREE.Vector3(dogX,0,dogZ);if(cameraSubject.type==='dog'&&cameraSubject.id===String(dog.id)){cameraSubject.x=dogX;cameraSubject.z=dogZ}}).catch(()=>{});};
+  const loadDog=()=>{if(!itemUrl||!itemKey)return;fetch(itemUrl+'/rest/v1/island_dog_status?select=id,x,z,health,state,companion',{headers:{apikey:itemKey,Authorization:'Bearer '+itemKey}}).then(r=>r.ok?r.json():[]).then(rows=>{const dog=rows[0];if(!dog){dogRoot.visible=false;return;}const dogX=Number(dog.x),dogZ=Number(dog.z);if(!Number.isFinite(dogX)||!Number.isFinite(dogZ)){dogRoot.visible=false;return;}dogRoot.visible=Number(dog.health)>0;dogRoot.userData.behaviorState=String(dog.state||'').toLowerCase();dogRoot.userData.isCompanion=!!dog.companion;if(!dogRoot.userData.destination){dogRoot.position.set(dogX,height(dogX,dogZ),dogZ)}dogRoot.userData.destination=new THREE.Vector3(dogX,0,dogZ);if(cameraSubject.type==='dog'&&cameraSubject.id===String(dog.id)){cameraSubject.x=dogX;cameraSubject.z=dogZ}}).catch(()=>{});};
   loadDog();dogRefresh=window.setInterval(loadDog,5000);
   // One persistent reddish clay outcrop, made from a compact cluster of rocks.
   const clayRoot=new THREE.Group();scene.add(clayRoot);
@@ -1031,8 +1031,16 @@ export function mountIsland(element, onTick, visualOptions={}) {
     const goal=String(sharedGeorge?.inventory?.current_goal||'').toLowerCase();
     const lastAction=String(sharedGeorge?.inventory?.last_action||'').toLowerCase();
     const needs=sharedGeorge?.needs||{};
+    // Emotional movement is driven by actual danger/combat state, never by low hunger alone.
+    const dogDistance=dogRoot.visible?Math.hypot(dogRoot.position.x-george.position.x,dogRoot.position.z-george.position.z):Infinity;
+    const hostileDog=dogRoot.visible&&!dogRoot.userData.isCompanion&&/aggress|attack|hostile|fight|chase/.test(dogRoot.userData.behaviorState||'');
+    const threatened=hostileDog&&dogDistance<20;
+    const fighting=/fight|defend|punch|combat|attack_dog/.test(goal+' '+lastAction);
+    const frightened=/flee|escape|panic|run_away|fear/.test(goal+' '+lastAction)||(threatened&&!fighting);
     let survivalPose='idle';
     if(isChopping)survivalPose='chop';
+    else if(fighting)survivalPose='fight_stance';
+    else if(frightened)survivalPose='fear_run';
     else if(sitting)survivalPose='sit';
     else if(recent==='tree_cut')survivalPose='saw';
     else if(recent==='ate_apple'||recent==='ate_fish')survivalPose='eat';
@@ -1077,7 +1085,7 @@ export function mountIsland(element, onTick, visualOptions={}) {
       }
       georgeAnimations.setIKTargets(targets);
     }
-    const motorAction=isChopping?'chop':rummaging?'rummage':pickingUp?'pickup':moved&&!sitting?'walk':survivalPose;
+    const motorAction=isChopping?'chop':fighting?'fight_stance':frightened?'fear_run':rummaging?'rummage':pickingUp?'pickup':moved&&!sitting?'walk':survivalPose;
     const motorFrame=georgeAnimations?.update(dt,elapsed,motorAction);
     if(motorFrame?.feedback){
       const f=motorFrame.feedback;
