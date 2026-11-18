@@ -737,50 +737,106 @@ export function mountIsland(element, onTick, visualOptions={}) {
   // Lightweight active ragdoll: gravity-driven centre of mass, spring/damped
   // torso rotation and independently settling limbs. No external physics engine.
   const bodyPhysics={massKg:78,gravity:9.81,centreHeight:1.15,velocityY:0,lean:0,leanVelocity:0,fallTime:0,recovery:0,mode:'upright',previousX:null,previousZ:null};
-  const ragdollBones=['UpperArm.L','UpperArm.R','LowerArm.L','LowerArm.R','UpperLeg.L','UpperLeg.R','LowerLeg.L','LowerLeg.R'];
-  const ragdollOffsets=new Map();
+  // Articulated particle ragdoll. Each anatomical segment has a mass,
+  // Verlet momentum, a distance joint and a terrain collision radius.
+  // The skeleton drives the visible GLB through constrained local rotations.
+  const bodySegments=[
+    ['Hips',12,null,.0,.24],['Spine',16,'Hips',.45,.24],['Head',5,'Spine',.52,.18],
+    ['UpperArm.L',3,'Spine',.38,.13],['LowerArm.L',2,'UpperArm.L',.34,.11],['Hand.L',.8,'LowerArm.L',.23,.09],
+    ['UpperArm.R',3,'Spine',.38,.13],['LowerArm.R',2,'UpperArm.R',.34,.11],['Hand.R',.8,'LowerArm.R',.23,.09],
+    ['UpperLeg.L',9,'Hips',.49,.17],['LowerLeg.L',5,'UpperLeg.L',.46,.14],['Foot.L',1.5,'LowerLeg.L',.25,.12],
+    ['UpperLeg.R',9,'Hips',.49,.17],['LowerLeg.R',5,'UpperLeg.R',.46,.14],['Foot.R',1.5,'LowerLeg.R',.25,.12]
+  ];
+  const ragdollParticles=new Map();
+  const ragdollJoints=[];
+  const ragdollBoneMap=new Map();
+  const ragdollWorld=new THREE.Vector3(),ragdollDirection=new THREE.Vector3();
+  const initialiseRagdoll=()=>{
+    ragdollParticles.clear();ragdollJoints.length=0;ragdollBoneMap.clear();
+    if(!adventurer)return;
+    adventurer.updateMatrixWorld(true);
+    adventurer.traverse(b=>{if(b.isBone)ragdollBoneMap.set(b.name,b)});
+    for(const [name,mass,parent,nominalLength,radius] of bodySegments){
+      const bone=ragdollBoneMap.get(name);if(!bone)continue;
+      const position=bone.getWorldPosition(new THREE.Vector3());
+      ragdollParticles.set(name,{position,previous:position.clone(),mass,radius,rest:position.clone()});
+      if(parent&&ragdollBoneMap.has(parent)){
+        const parentPos=ragdollBoneMap.get(parent).getWorldPosition(new THREE.Vector3());
+        const length=THREE.MathUtils.clamp(position.distanceTo(parentPos),nominalLength*.55,nominalLength*1.6);
+        ragdollJoints.push({a:parent,b:name,length});
+      }
+    }
+  };
+  const simulateRagdoll=(dt)=>{
+    const step=Math.min(dt,.033);
+    for(const particle of ragdollParticles.values()){
+      const velocity=particle.position.clone().sub(particle.previous).multiplyScalar(.985);
+      particle.previous.copy(particle.position);
+      particle.position.add(velocity).y-=bodyPhysics.gravity*step*step;
+    }
+    for(let pass=0;pass<7;pass++){
+      for(const joint of ragdollJoints){
+        const a=ragdollParticles.get(joint.a),b=ragdollParticles.get(joint.b);if(!a||!b)continue;
+        const delta=b.position.clone().sub(a.position),distance=delta.length();if(distance<1e-5)continue;
+        const error=(distance-joint.length)/distance;
+        const invA=1/a.mass,invB=1/b.mass,weight=invA+invB;
+        a.position.addScaledVector(delta,error*invA/weight);
+        b.position.addScaledVector(delta,-error*invB/weight);
+      }
+      for(const particle of ragdollParticles.values()){
+        const terrain=height(particle.position.x,particle.position.z)+particle.radius;
+        if(particle.position.y<terrain){particle.position.y=terrain;particle.previous.x=THREE.MathUtils.lerp(particle.previous.x,particle.position.x,.35);particle.previous.z=THREE.MathUtils.lerp(particle.previous.z,particle.position.z,.35);}
+      }
+    }
+    // Rotate each parent joint toward the physical child segment.
+    // Constrain the correction to avoid extreme inversions.
+    adventurer.updateMatrixWorld(true);
+    for(const joint of ragdollJoints){
+      const bone=ragdollBoneMap.get(joint.a),child=ragdollBoneMap.get(joint.b);
+      const a=ragdollParticles.get(joint.a),b=ragdollParticles.get(joint.b);
+      if(!bone||!child||!a||!b)continue;
+      const current=child.getWorldPosition(new THREE.Vector3()).sub(bone.getWorldPosition(new THREE.Vector3()));
+      const desired=b.position.clone().sub(a.position);
+      if(current.lengthSq()<1e-6||desired.lengthSq()<1e-6)continue;
+      const angle=Math.min(.19,current.angleTo(desired));
+      const axis=new THREE.Vector3().crossVectors(current,desired).normalize();
+      if(axis.lengthSq()<1e-6)continue;
+      const worldQ=new THREE.Quaternion().setFromAxisAngle(axis,angle);
+      const parentQ=bone.parent.getWorldQuaternion(new THREE.Quaternion());
+      const localQ=parentQ.clone().invert().multiply(worldQ).multiply(parentQ);
+      bone.quaternion.premultiply(localQ);
+      adventurer.updateMatrixWorld(true);
+    }
+  };
   const applyBodyPhysics=(dt,ground,moved,sleeping,swimming,forceFall=false)=>{
-    if(!adventurer||!georgeAnimations?.hasRig)return;
-    const p=bodyPhysics;
-    const h=.9;
+    if(!adventurer||!georgeAnimations?.hasRig)return false;
+    const p=bodyPhysics,h=.9;
     const left=height(george.position.x-h,george.position.z),right=height(george.position.x+h,george.position.z);
     const front=height(george.position.x,george.position.z-h),back=height(george.position.x,george.position.z+h);
     const gradient=Math.hypot((right-left)/(2*h),(back-front)/(2*h));
     const x=george.position.x,z=george.position.z;
     const displacement=p.previousX===null?0:Math.hypot(x-p.previousX,z-p.previousZ);
     p.previousX=x;p.previousZ=z;
-    const stumble=!sleeping&&!swimming&&(forceFall||(gradient>.85&&displacement>.06));
-    if(stumble&&p.mode==='upright'){p.mode='falling';p.fallTime=0;p.velocityY=0;p.leanVelocity=0;}
+    if(!sleeping&&!swimming&&(forceFall||(gradient>.85&&displacement>.06))&&p.mode==='upright'){
+      p.mode='falling';p.fallTime=0;p.velocityY=0;p.leanVelocity=0;initialiseRagdoll();
+    }
+    const active=p.mode!=='upright';
     if(p.mode==='falling'||p.mode==='down'){
       p.fallTime+=dt;
-      // Weight produces gravitational force m*g; acceleration is F/m.
-      const gravityForce=p.massKg*p.gravity;
-      p.velocityY-=gravityForce/p.massKg*dt;
+      p.velocityY-=p.gravity*dt;
       const floor=ground+.24;
-      const nextY=Math.max(floor,george.position.y+p.velocityY*dt);
-      if(nextY<=floor){p.velocityY=0;p.mode='down';}
-      george.position.y=nextY;
+      george.position.y=Math.max(floor,george.position.y+p.velocityY*dt);
+      if(george.position.y<=floor){p.velocityY=0;p.mode='down';}
       p.leanVelocity+=(Math.PI*.5-p.lean)*20*dt-p.leanVelocity*7*dt;
       p.lean=THREE.MathUtils.clamp(p.lean+p.leanVelocity*dt,0,Math.PI*.5);
       if(p.mode==='down'&&p.fallTime>2.2&&!sleeping){p.mode='recovering';p.recovery=0;}
     }else if(p.mode==='recovering'){
-      p.recovery+=dt;
-      p.lean=Math.max(0,p.lean-dt*1.3);
-      if(p.lean<.02){p.lean=0;p.mode='upright';p.velocityY=0;}
+      p.recovery+=dt;p.lean=Math.max(0,p.lean-dt*1.3);
+      if(p.lean<.02){p.lean=0;p.mode='upright';p.velocityY=0;ragdollParticles.clear();}
     }else p.lean=THREE.MathUtils.damp(p.lean,0,8,dt);
-    // Animate limb inertia as a bounded secondary layer; anatomical constraints
-    // are applied by the rig controller before these small additive offsets.
-    const settling=p.mode==='falling'||p.mode==='down'||p.mode==='recovering';
-    if(settling){
-      adventurer.traverse(b=>{if(!b.isBone||!ragdollBones.includes(b.name))return;
-        const side=b.name.endsWith('.L')?-1:1;
-        const bend=b.name.startsWith('UpperArm')?-.45:b.name.startsWith('LowerArm')?-.6:b.name.startsWith('UpperLeg')?.35:.55;
-        const wobble=Math.sin(elapsed*6+side*1.8)*.12*Math.exp(-p.fallTime*.9);
-        b.rotation.x+=THREE.MathUtils.clamp((bend+wobble)*dt*5,-.08,.08);
-      });
-    }
+    if(active&&ragdollParticles.size)simulateRagdoll(dt);
     adventurer.rotation.z=THREE.MathUtils.damp(adventurer.rotation.z,p.lean,9,dt);
-    return settling;
+    return active;
   };
   const loader=new GLTFLoader();
   // The axe is attached to the right-hand bone, never left floating in world space.
