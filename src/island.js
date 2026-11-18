@@ -908,12 +908,13 @@ export function mountIsland(element, onTick, visualOptions={}) {
       return filtered;
     };
     const walk=withoutRootTranslation(findClip('Walk')),idle=withoutRootTranslation(findClip('Idle'));
-    console.info('George selected walking clip:',walk?.name||'procedural fallback');
+    console.info('George selected walking clip:',walk?.name||'NONE');
+    visualOptions.onAnimationStatus?.(walk?`Original walking clip: ${walk.name}. Run uses a 1.45× copy.`:`No Walk clip found in Adventurer.glb. Available: ${gltf.animations.map(a=>a.name).join(', ')||'none'}. Procedural leg animation disabled.`);
     if(walk){walkAction=adventurerMixer.clipAction(walk);const runClip=walk.clone();runClip.name='GeorgeRunFromWalk';runAction=adventurerMixer.clipAction(runClip);runAction.setEffectiveTimeScale(1.45);}
     if(idle)idleAction=adventurerMixer.clipAction(idle);
     activeAction=walkAction||idleAction;
     activeAction?.play();
-    visualOptions.onAnimationStatus?.('George 3D model loaded — animation controller ready');
+    visualOptions.onAnimationStatus?.(walk?`George ready — Walk: ${walk.name}; Run: copied walk at 1.45×`:`George loaded, but no walking clip found. Available clips: ${gltf.animations.map(a=>a.name).join(', ')||'none'}`);
     } catch(error) {
       console.error('George model initialization failed',error);
       visualOptions.onAnimationStatus?.('3D model initialization error: '+(error?.message||String(error)));
@@ -1174,7 +1175,7 @@ export function mountIsland(element, onTick, visualOptions={}) {
     // Do not infer an eating/drinking animation merely from low needs: wait for an actual action.
     const wantsRun=(manualAnimation==='fear_run'||(!manualAnimation&&frightened&&moved));
     const wantsWalk=(manualAnimation==='walk'||(!manualAnimation&&moved&&!sitting&&!pickingUp&&!rummaging&&!isChopping));
-    const desiredAction=wantsRun&&runAction?runAction:wantsWalk?walkAction:manualAnimation?null:idleAction;
+    const desiredAction=wantsRun?(runAction||walkAction||idleAction):wantsWalk?(walkAction||idleAction):manualAnimation?null:idleAction;
     if(manualAnimation&&manualAnimation!=='walk'&&manualAnimation!=='fear_run'&&activeAction){activeAction.stop();activeAction=null;}if(desiredAction&&desiredAction!==activeAction){activeAction?.fadeOut(.25);desiredAction.reset().fadeIn(.25).play();activeAction=desiredAction;}
     // Mixer updates first, then the procedural arm/leg/head offsets layer on top.
     // Generate physically grounded end-effector targets in world coordinates.
