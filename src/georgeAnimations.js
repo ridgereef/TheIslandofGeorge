@@ -109,7 +109,7 @@ export function createGeorgeAnimationController(root) {
         const error=solveChain(['UpperArm.'+side,'LowerArm.'+side,'Hand.'+side],targets[side==='L'?'leftHand':'rightHand']);
         feedback[side==='L'?'leftHandError':'rightHandError']=error;
       }
-      if(action==='walk'&&targets[side==='L'?'leftFoot':'rightFoot']){
+      if((action==='walk'||action==='fear_run')&&targets[side==='L'?'leftFoot':'rightFoot']){
         const error=solveChain(['UpperLeg.'+side,'LowerLeg.'+side,'Foot.'+side],targets[side==='L'?'leftFoot':'rightFoot']);
         feedback[side==='L'?'leftFootError':'rightFootError']=error;
       }
