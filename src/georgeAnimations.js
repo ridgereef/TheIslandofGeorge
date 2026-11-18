@@ -240,19 +240,54 @@ export function createGeorgeAnimationController(root) {
       const pulse=Math.sin(t*5),slow=Math.sin(t*1.3);
       switch(current) {
         case 'scratch_head': {
-          // Lift elbow first, then fold forearm towards the temple. Single gesture.
+          // Reference-style reach: shoulder raises elbow alongside head, then
+          // forearm folds towards the temple. Compute directions in world space
+          // so Blender/Mixamo local bone axes cannot send the hand behind the back.
           const smooth=v=>{v=THREE.MathUtils.clamp(v,0,1);return v*v*(3-2*v);};
-          const lift=smooth(t/.48)*(1-smooth((t-1.45)/.45));
-          const touch=smooth((t-.38)/.43)*(1-smooth((t-1.38)/.46));
-          const scratch=touch*Math.sin(Math.max(0,t-.78)*17)*.065;
-          const shoulder=bones.get('UpperArm.R'),head=bones.get('Head');
-          // Derive outward shoulder roll from actual bone positions, not assumed L/R axes.
-          root.updateMatrixWorld(true);
-          const outward=shoulder&&head?Math.sign(shoulder.getWorldPosition(new THREE.Vector3()).x-head.getWorldPosition(new THREE.Vector3()).x)||1:1;
-          offset('UpperArm.R',-1.03*lift,0,outward*.65*lift,1);
-          offset('LowerArm.R',-1.32*touch+scratch,0,0,1);
-          offset('Hand.R',-.12*touch,0,0,1);
-          aimHead(.035*touch,-.04*touch);
+          const lift=smooth(t/.52)*(1-smooth((t-1.48)/.40));
+          const touch=smooth((t-.42)/.43)*(1-smooth((t-1.42)/.40));
+          const shoulder=bones.get('UpperArm.R'),elbow=bones.get('LowerArm.R');
+          const hand=bones.get('Hand.R'),head=bones.get('Head');
+          if(shoulder&&elbow&&hand&&head&&lift>.001){
+            root.updateMatrixWorld(true);
+            const shoulderPos=shoulder.getWorldPosition(new THREE.Vector3());
+            const elbowPos=elbow.getWorldPosition(new THREE.Vector3());
+            const wristPos=hand.getWorldPosition(new THREE.Vector3());
+            const headPos=head.getWorldPosition(new THREE.Vector3());
+            const right=new THREE.Vector3(1,0,0).transformDirection(root.matrixWorld);
+            const forward=new THREE.Vector3(0,0,1).transformDirection(root.matrixWorld);
+            const up=new THREE.Vector3(0,1,0).transformDirection(root.matrixWorld);
+            // Pick the shoulder's actual side of the head, not the bone label.
+            const side=Math.sign(shoulderPos.clone().sub(headPos).dot(right))||1;
+            const upperLength=Math.max(.05,shoulderPos.distanceTo(elbowPos));
+            const lowerLength=Math.max(.05,elbowPos.distanceTo(wristPos));
+            const elbowGoal=shoulderPos.clone()
+              .addScaledVector(right,side*upperLength*.68)
+              .addScaledVector(up,upperLength*.66)
+              .addScaledVector(forward,upperLength*.25);
+            const temple=headPos.clone()
+              .addScaledVector(right,side*.14)
+              .addScaledVector(up,.035)
+              .addScaledVector(forward,.13);
+            // Rotate a bone in world space then convert to parent-local space.
+            const pointBone=(bone,from,to,blend)=>{
+              if(blend<=0||from.lengthSq()<1e-8||to.lengthSq()<1e-8)return;
+              const worldTurn=new THREE.Quaternion().setFromUnitVectors(from.normalize(),to.normalize());
+              const parentWorld=bone.parent.getWorldQuaternion(new THREE.Quaternion());
+              const localTurn=parentWorld.clone().invert().multiply(worldTurn).multiply(parentWorld);
+              const next=localTurn.multiply(bone.quaternion.clone());
+              bone.quaternion.slerp(next,Math.min(1,blend));
+              root.updateMatrixWorld(true);
+            };
+            pointBone(shoulder,elbowPos.clone().sub(shoulderPos),elbowGoal.clone().sub(shoulderPos),lift);
+            const currentElbow=elbow.getWorldPosition(new THREE.Vector3());
+            const currentWrist=hand.getWorldPosition(new THREE.Vector3());
+            // Clamp the target to the forearm's reachable sphere.
+            const wristGoal=temple.clone().sub(currentElbow).clampLength(.03,lowerLength*.98).add(currentElbow);
+            pointBone(elbow,currentWrist.sub(currentElbow),wristGoal.sub(currentElbow),touch);
+            limitJoint('UpperArm.R');limitJoint('LowerArm.R');
+          }
+          aimHead(.025*touch,-.025*touch);
           break;
         }
         case 'wipe_brow': {const p=Math.sin(THREE.MathUtils.clamp(t/1.9,0,1)*Math.PI);offset('UpperArm.R',-.42*p,0,-.15*p,1);offset('LowerArm.R',-.9*p,0,0,1);aimHead(-.06*p,0);break;}
