@@ -736,7 +736,7 @@ export function mountIsland(element, onTick, visualOptions={}) {
   let adventurer=null,adventurerMixer=null,walkAction=null,idleAction=null,activeAction=null,georgeAnimations=null;
   // Lightweight active ragdoll: gravity-driven centre of mass, spring/damped
   // torso rotation and independently settling limbs. No external physics engine.
-  const bodyPhysics={massKg:78,gravity:9.81,centreHeight:1.15,velocityY:0,lean:0,leanVelocity:0,fallTime:0,recovery:0,mode:'upright',previousX:null,previousZ:null};
+  let manualAnimation=null;let manualUntil=0;let nextGesture=performance.now()+ (12+Math.random()*16)*60000;const triggerManualAnimation=(action)=>{if(!['scratch_head','wipe_brow','knock_down','walk','fear_run','pickup','chop'].includes(action))return false;if(action==='knock_down'){if(!adventurer||bodyPhysics.mode!=='upright')return false;bodyPhysics.manualFall=true;manualAnimation=null;return true;}manualAnimation=action;manualUntil=performance.now()+ (action==='chop'?2600:action==='walk'||action==='fear_run'?3200:action==='pickup'?2200:1900);return true;};window.__georgeManualAnimation=triggerManualAnimation;const bodyPhysics={massKg:78,gravity:9.81,centreHeight:1.15,velocityY:0,lean:0,leanVelocity:0,fallTime:0,recovery:0,mode:'upright',previousX:null,previousZ:null};
   // Articulated particle ragdoll. Each anatomical segment has a mass,
   // Verlet momentum, a distance joint and a terrain collision radius.
   // The skeleton drives the visible GLB through constrained local rotations.
@@ -817,8 +817,8 @@ export function mountIsland(element, onTick, visualOptions={}) {
     const x=george.position.x,z=george.position.z;
     const displacement=p.previousX===null?0:Math.hypot(x-p.previousX,z-p.previousZ);
     p.previousX=x;p.previousZ=z;
-    if(!sleeping&&!swimming&&(forceFall||(gradient>.85&&displacement>.06))&&p.mode==='upright'){
-      p.mode='falling';p.fallTime=0;p.velocityY=0;p.leanVelocity=0;initialiseRagdoll();
+    if(!sleeping&&!swimming&&(forceFall||p.manualFall||(gradient>.85&&displacement>.06))&&p.mode==='upright'){
+      p.manualFall=false;p.mode='falling';p.fallTime=0;p.velocityY=0;p.leanVelocity=0;initialiseRagdoll();
     }
     const active=p.mode!=='upright';
     if(p.mode==='falling'||p.mode==='down'){
@@ -1191,7 +1191,7 @@ export function mountIsland(element, onTick, visualOptions={}) {
       }
       georgeAnimations.setIKTargets(targets);
     }
-    const motorAction=bodyPhysics.mode!=='upright'?'idle':isChopping?'chop':fighting?'fight_stance':frightened?'fear_run':rummaging?'rummage':pickingUp?'pickup':moved&&!sitting?'walk':survivalPose;
+    if(manualAnimation&&performance.now()>manualUntil)manualAnimation=null;if(!manualAnimation&&bodyPhysics.mode==='upright'&&performance.now()>nextGesture){nextGesture=performance.now()+(12+Math.random()*16)*60000;if(!isChopping&&!fighting&&!frightened&&!rummaging&&!pickingUp&&!swimming){manualAnimation=temperature>24&&Math.random()<.75?'wipe_brow':'scratch_head';manualUntil=performance.now()+1800;}}const motorAction=manualAnimation&&bodyPhysics.mode==='upright'?manualAnimation:bodyPhysics.mode!=='upright'?'idle':isChopping?'chop':fighting?'fight_stance':frightened?'fear_run':rummaging?'rummage':pickingUp?'pickup':moved&&!sitting?'walk':survivalPose;
     // Evaluate the axe's actual head-to-trunk distance only near the strike phase.
     // This is animation feedback; authoritative tree damage remains server controlled.
     let axeError=null;
@@ -1262,5 +1262,5 @@ export function mountIsland(element, onTick, visualOptions={}) {
         if(progress>=1)cameraFlight=null;
       }else{const delta=subjectPosition.sub(controls.target).multiplyScalar(1-Math.exp(-dt*3.5));controls.target.add(delta);camera.position.add(delta)}
     }controls.update();constrainCamera();controls.update();renderer.render(scene,camera);if(elapsed-last>2){last=elapsed;onTick?.({daylight,phase:cycle,georgeX:george.position.x,georgeZ:george.position.z,weather:weatherLabel,temperature:Math.round(temperature),thermal,swimming,wetness:Math.round(wetness*100),weatherSource:weather.source||'Simulated fallback',wind:Math.round(weather.wind||0),freshwaterNearby:freshwaterAt(george.position.x,george.position.z),georgeMoving:moved,sitting,atCamp:Math.hypot(george.position.x,george.position.z)<9,resting:resting&&Math.hypot(george.position.x,george.position.z)<9})}};
-  animate();return ()=>{disposed=true;itemsDisposed=true;clearInterval(motorSkillRefresh);if(rabbitRefresh!==null)clearInterval(rabbitRefresh);if(dogRefresh!==null)clearInterval(dogRefresh);if(fishRefresh!==null)clearInterval(fishRefresh);if(itemRefresh!==null)clearInterval(itemRefresh);if(cutTreeRefresh!==null)clearInterval(cutTreeRefresh);if(regrowthRefresh!==null)clearInterval(regrowthRefresh);if(carriedLogRefresh!==null)clearInterval(carriedLogRefresh);if(eventRefresh!==null)clearInterval(eventRefresh);if(sharedRefresh!==null)clearInterval(sharedRefresh);if(crateEventRefresh!==null)clearInterval(crateEventRefresh);if(cratePositionRefresh!==null)clearInterval(cratePositionRefresh);cancelAnimationFrame(frame);observer.disconnect();renderer.domElement.removeEventListener('pointerdown',onDown);window.removeEventListener('pointerup',onUp);window.removeEventListener('keydown',onKeyDown);window.removeEventListener('keyup',onKeyUp);window.removeEventListener('blur',onBlur);window.removeEventListener('island-focus-creature',onCreatureFocus);actions.remove();controls.dispose();renderer.dispose();renderer.domElement.remove();scene.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material){const mats=Array.isArray(o.material)?o.material:[o.material];mats.forEach(m=>m.dispose())}})};
+  animate();return ()=>{disposed=true;if(window.__georgeManualAnimation===triggerManualAnimation)delete window.__georgeManualAnimation;itemsDisposed=true;clearInterval(motorSkillRefresh);if(rabbitRefresh!==null)clearInterval(rabbitRefresh);if(dogRefresh!==null)clearInterval(dogRefresh);if(fishRefresh!==null)clearInterval(fishRefresh);if(itemRefresh!==null)clearInterval(itemRefresh);if(cutTreeRefresh!==null)clearInterval(cutTreeRefresh);if(regrowthRefresh!==null)clearInterval(regrowthRefresh);if(carriedLogRefresh!==null)clearInterval(carriedLogRefresh);if(eventRefresh!==null)clearInterval(eventRefresh);if(sharedRefresh!==null)clearInterval(sharedRefresh);if(crateEventRefresh!==null)clearInterval(crateEventRefresh);if(cratePositionRefresh!==null)clearInterval(cratePositionRefresh);cancelAnimationFrame(frame);observer.disconnect();renderer.domElement.removeEventListener('pointerdown',onDown);window.removeEventListener('pointerup',onUp);window.removeEventListener('keydown',onKeyDown);window.removeEventListener('keyup',onKeyUp);window.removeEventListener('blur',onBlur);window.removeEventListener('island-focus-creature',onCreatureFocus);actions.remove();controls.dispose();renderer.dispose();renderer.domElement.remove();scene.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material){const mats=Array.isArray(o.material)?o.material:[o.material];mats.forEach(m=>m.dispose())}})};
 }
