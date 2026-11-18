@@ -195,8 +195,8 @@ export function createGeorgeAnimationController(root) {
       aimHead(0,0,weight);
       const pulse=Math.sin(t*5),slow=Math.sin(t*1.3);
       switch(current) {
-        case 'scratch_head': {const p=Math.sin(Math.min(1,t/2.6)*Math.PI);offset('UpperArm.R',-.48*p,0,.42*p,1);offset('LowerArm.R',-1.35*p,0,0,1);aimHead(.08*p,-.10*p);break;}
-        case 'wipe_brow': {const p=Math.sin(Math.min(1,t/2.6)*Math.PI);offset('UpperArm.R',-.55*p,0,.4*p,1);offset('LowerArm.R',-1.3*p,0,0,1);aimHead(-.06*p,0);break;}
+        case 'scratch_head': {const p=Math.sin(THREE.MathUtils.clamp(t/1.9,0,1)*Math.PI);offset('UpperArm.R',-.48*p,0,.42*p,1);offset('LowerArm.R',-1.35*p,0,0,1);aimHead(.08*p,-.10*p);break;}
+        case 'wipe_brow': {const p=Math.sin(THREE.MathUtils.clamp(t/1.9,0,1)*Math.PI);offset('UpperArm.R',-.55*p,0,.4*p,1);offset('LowerArm.R',-1.3*p,0,0,1);aimHead(-.06*p,0);break;}
         case 'get_up': {const phase=THREE.MathUtils.clamp(t/2.4,0,1);const push=phase<.48?1:Math.max(0,1-(phase-.48)/.52);const crouch=phase<.5?1:Math.max(0,1-(phase-.5)*2);offset('Spine',.35*crouch);offset('Hips',.22*crouch);for(const side of ['L','R']){const sign=side==='L'?-1:1;offset('UpperArm.'+side,-.95*push,0,sign*.25*push,1);offset('LowerArm.'+side,-.65*push,0,0,1);offset('UpperLeg.'+side,-.8*crouch,0,sign*.08,1);offset('LowerLeg.'+side,1.15*crouch,0,0,1);}break;}
         case 'walk': {
           // Fallback gait if the GLB has no identifiable walking clip.
