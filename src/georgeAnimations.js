@@ -30,6 +30,38 @@ export function createGeorgeAnimationController(root) {
     if(found)bones.set(canonical,found[1]);
   }
   const rigReport={boneCount:originalBoneNames.length,hasHips:bones.has('Hips'),hasArms:bones.has('UpperArm.L')&&bones.has('UpperArm.R'),boneNames:originalBoneNames.slice(0,80)};
+  // Measure the actual loaded armature rather than assuming human proportions.
+  root.updateMatrixWorld(true);
+  const rigLengths={};
+  const limbSpecs={
+    leftArm:['UpperArm.L','LowerArm.L','Hand.L'],rightArm:['UpperArm.R','LowerArm.R','Hand.R'],
+    leftLeg:['UpperLeg.L','LowerLeg.L','Foot.L'],rightLeg:['UpperLeg.R','LowerLeg.R','Foot.R']
+  };
+  for(const [name,chain] of Object.entries(limbSpecs)){
+    const joints=chain.map(n=>bones.get(n));
+    if(joints.every(Boolean)){
+      const positions=joints.map(b=>b.getWorldPosition(new THREE.Vector3()));
+      rigLengths[name]={upper:positions[0].distanceTo(positions[1]),lower:positions[1].distanceTo(positions[2])};
+    }
+  }
+  const limbValid=name=>rigLengths[name]&&rigLengths[name].upper>.03&&rigLengths[name].lower>.03;
+  rigReport.limbLengths=rigLengths;
+  rigReport.calibrated=Object.keys(limbSpecs).every(limbValid);
+  // A target beyond the chain's reach must not stretch or flip the joints.
+  function clampReach(chain,target,margin=.96){
+    const base=bones.get(chain[0]);
+    if(!base||!target)return null;
+    root.updateMatrixWorld(true);
+    const origin=base.getWorldPosition(new THREE.Vector3());
+    const end=target.clone().sub(origin);
+    const side=chain[0].endsWith('.L')?'left':'right';
+    const kind=chain[0].startsWith('UpperArm')?'Arm':'Leg';
+    const length=rigLengths[side+kind];
+    if(!length)return null;
+    const maxReach=(length.upper+length.lower)*margin;
+    if(end.lengthSq()<1e-8)return null;
+    return origin.add(end.clampLength(Math.abs(length.upper-length.lower)+.02,maxReach));
+  }
   const neutral = new THREE.Quaternion();
   const bindRotations = new Map([...bones].map(([name,bone])=>[name,bone.quaternion.clone()]));
   const euler = new THREE.Euler();
@@ -101,7 +133,7 @@ export function createGeorgeAnimationController(root) {
   }
   function solveChain(names,target,iterations=5){
     const end=bones.get(names[names.length-1]);if(!end||!target)return null;
-    const goal=target.isVector3?target:new THREE.Vector3(target.x,target.y,target.z);
+    const requested=target.isVector3?target:new THREE.Vector3(target.x,target.y,target.z);const goal=clampReach(names,requested);if(!goal)return null;
     for(let iteration=0;iteration<iterations;iteration++){
       for(let i=names.length-2;i>=0;i--){
         const bone=bones.get(names[i]);if(!bone)continue;
@@ -128,7 +160,7 @@ export function createGeorgeAnimationController(root) {
   function applyKinematics(action){
     feedback.action=action;feedback.leftHandError=null;feedback.rightHandError=null;
     feedback.leftFootError=null;feedback.rightFootError=null;feedback.jointViolations=0;feedback.balanceError=null;feedback.footSlip=null;
-    const enabled=action==='pickup'; // Disable unstable walking/gesture CCD until calibrated to actual rig lengths.
+    const enabled=action==='pickup'&&rigReport.calibrated; // Walking IK stays off until terrain/contact tests pass.
     if(!enabled)return;
     for(const side of ['L','R']){
       if(action==='pickup'&&targets[side==='L'?'leftHand':'rightHand']){
