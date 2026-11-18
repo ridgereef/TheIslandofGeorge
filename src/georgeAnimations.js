@@ -206,13 +206,19 @@ export function createGeorgeAnimationController(root) {
     setIKTargets(next){targets=next||{};},
     getSkeletalFeedback(){return {...feedback};},
     setLearnedSkills(skills){learnedSkills=skills&&typeof skills==='object'?skills:{};},
-    update(dt, seconds, requested) {
+    update(dt, seconds, requested, nativeClip=false) {
       const target = ['scratch_head','wipe_brow','get_up'].includes(requested) ? requested : clipActions.has(requested) ? requested : 'idle';
       if (target !== current) {
         weight = Math.max(0,weight-dt*4);
         if (weight < .03) current=target;
       } else weight = Math.min(1,weight+dt*3);
       const t=seconds;
+      // When a native GLB walk/idle clip is playing, it owns the entire skeleton.
+      // Never overwrite its keyed legs/arms with bind-pose resets or procedural gait.
+      if(nativeClip && (target==='walk'||target==='idle')){
+        current=target;weight=0;feedback.action=target;
+        return {action:target,feedback:{...feedback}};
+      }
       // A pickup/rummage pose must never persist into walking or idle.
       // The GLB clips do not consistently key the torso, so explicitly restore
       // the neutral torso when an interaction finishes.
