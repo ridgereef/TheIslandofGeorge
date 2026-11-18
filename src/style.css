@@ -88,3 +88,5 @@ footer{color:#647a80}
 .memory-map-legend i{display:inline-block;border-radius:50%;flex:none}
 .memory-legend-george{width:10px;height:10px;background:#1785ee;border:1px solid white;box-shadow:0 0 0 1px #1785ee}
 .memory-legend-rabbit{width:6px;height:6px;background:#76533b}
+
+.memory-dog-dot{position:absolute;z-index:7;transform:translate(-50%,-50%);font-size:16px;line-height:1;filter:drop-shadow(0 1px 2px #0008);cursor:help}.memory-dog-dot.friendly{filter:drop-shadow(0 0 4px #38a96a)}
