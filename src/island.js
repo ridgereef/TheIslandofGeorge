@@ -1110,7 +1110,18 @@ export function mountIsland(element, onTick, visualOptions={}) {
       const errors=motorAction==='pickup'?[f.leftHandError,f.rightHandError]:motorAction==='walk'||motorAction==='fear_run'?[f.leftFootError,f.rightFootError]:motorAction==='chop'?[axeError]:[];
       const skill=motorAction==='chop'?'axe_chop':motorAction;
       const valid=errors.filter(v=>Number.isFinite(v)&&v>=0);
-      if(valid.length){const s=motorSamples[skill];s.sum+=valid.reduce((a,b)=>a+b,0)/valid.length;s.n++;if(s.n>3000){s.sum/=2;s.n=Math.floor(s.n/2)}if(s.n>=10)void uploadMotorFeedback();}
+      if(valid.length){
+        const s=motorSamples[skill];
+        let score=valid.reduce((a,b)=>a+b,0)/valid.length;
+        if(skill==='walk'||skill==='fear_run'){
+          if(Number.isFinite(f.balanceError))score+=Math.min(2,f.balanceError)*.45;
+          if(Number.isFinite(f.footSlip))score+=Math.min(2,f.footSlip)*.3;
+        }
+        score+=Math.min(8,Math.max(0,f.jointViolations||0))*.12;
+        s.sum+=score;s.n++;
+        if(s.n>3000){s.sum/=2;s.n=Math.floor(s.n/2)}
+        if(s.n>=10)void uploadMotorFeedback();
+      }
     }
     if(adventurer){const baseline=adventurer.userData.groundOffset??0;adventurer.rotation.x=THREE.MathUtils.lerp(adventurer.rotation.x,sleeping&&!moved?-Math.PI/2:0,Math.min(1,dt*5));adventurer.position.y=THREE.MathUtils.lerp(adventurer.position.y,sleeping&&!moved?.35:baseline-(sitting?.55:0)-(pickingUp?.24:0)-(rummaging?.18:0),Math.min(1,dt*8));}
     rodGrip.visible=goal==='fish_wait'&&!moved;
