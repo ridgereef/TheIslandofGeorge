@@ -734,6 +734,54 @@ export function mountIsland(element, onTick, visualOptions={}) {
   // Load the user's original Adventurer GLB once it is present in public/models.
   // Keep the placeholder only as a fallback when the asset cannot be loaded.
   let adventurer=null,adventurerMixer=null,walkAction=null,idleAction=null,activeAction=null,georgeAnimations=null;
+  // Lightweight active ragdoll: gravity-driven centre of mass, spring/damped
+  // torso rotation and independently settling limbs. No external physics engine.
+  const bodyPhysics={massKg:78,gravity:9.81,centreHeight:1.15,velocityY:0,lean:0,leanVelocity:0,fallTime:0,recovery:0,mode:'upright',previousX:null,previousZ:null};
+  const ragdollBones=['UpperArm.L','UpperArm.R','LowerArm.L','LowerArm.R','UpperLeg.L','UpperLeg.R','LowerLeg.L','LowerLeg.R'];
+  const ragdollOffsets=new Map();
+  const applyBodyPhysics=(dt,ground,moved,sleeping,swimming,forceFall=false)=>{
+    if(!adventurer||!georgeAnimations?.hasRig)return;
+    const p=bodyPhysics;
+    const h=.9;
+    const left=height(george.position.x-h,george.position.z),right=height(george.position.x+h,george.position.z);
+    const front=height(george.position.x,george.position.z-h),back=height(george.position.x,george.position.z+h);
+    const gradient=Math.hypot((right-left)/(2*h),(back-front)/(2*h));
+    const x=george.position.x,z=george.position.z;
+    const displacement=p.previousX===null?0:Math.hypot(x-p.previousX,z-p.previousZ);
+    p.previousX=x;p.previousZ=z;
+    const stumble=!sleeping&&!swimming&&(forceFall||(gradient>.85&&displacement>.06));
+    if(stumble&&p.mode==='upright'){p.mode='falling';p.fallTime=0;p.velocityY=0;p.leanVelocity=0;}
+    if(p.mode==='falling'||p.mode==='down'){
+      p.fallTime+=dt;
+      // Weight produces gravitational force m*g; acceleration is F/m.
+      const gravityForce=p.massKg*p.gravity;
+      p.velocityY-=gravityForce/p.massKg*dt;
+      const floor=ground+.24;
+      const nextY=Math.max(floor,george.position.y+p.velocityY*dt);
+      if(nextY<=floor){p.velocityY=0;p.mode='down';}
+      george.position.y=nextY;
+      p.leanVelocity+=(Math.PI*.5-p.lean)*20*dt-p.leanVelocity*7*dt;
+      p.lean=THREE.MathUtils.clamp(p.lean+p.leanVelocity*dt,0,Math.PI*.5);
+      if(p.mode==='down'&&p.fallTime>2.2&&!sleeping){p.mode='recovering';p.recovery=0;}
+    }else if(p.mode==='recovering'){
+      p.recovery+=dt;
+      p.lean=Math.max(0,p.lean-dt*1.3);
+      if(p.lean<.02){p.lean=0;p.mode='upright';p.velocityY=0;}
+    }else p.lean=THREE.MathUtils.damp(p.lean,0,8,dt);
+    // Animate limb inertia as a bounded secondary layer; anatomical constraints
+    // are applied by the rig controller before these small additive offsets.
+    const settling=p.mode==='falling'||p.mode==='down'||p.mode==='recovering';
+    if(settling){
+      adventurer.traverse(b=>{if(!b.isBone||!ragdollBones.includes(b.name))return;
+        const side=b.name.endsWith('.L')?-1:1;
+        const bend=b.name.startsWith('UpperArm')?-.45:b.name.startsWith('LowerArm')?-.6:b.name.startsWith('UpperLeg')?.35:.55;
+        const wobble=Math.sin(elapsed*6+side*1.8)*.12*Math.exp(-p.fallTime*.9);
+        b.rotation.x+=THREE.MathUtils.clamp((bend+wobble)*dt*5,-.08,.08);
+      });
+    }
+    adventurer.rotation.z=THREE.MathUtils.damp(adventurer.rotation.z,p.lean,9,dt);
+    return settling;
+  };
   const loader=new GLTFLoader();
   // The axe is attached to the right-hand bone, never left floating in world space.
   // Prefer the uploaded model; retain a visible low-poly fallback if its filename differs.
@@ -1137,7 +1185,8 @@ export function mountIsland(element, onTick, visualOptions={}) {
     george.position.x=solidPosition.x;george.position.z=solidPosition.z;
     const ground=height(george.position.x,george.position.z);
     const swimming=ground< -1;
-    george.position.y=(swimming?-2.3:ground)+(moved?Math.sin(elapsed*(swimming?3:7))*(swimming?.22:.035):0);
+    const ragdollActive=applyBodyPhysics(dt,ground,moved,sleeping,swimming);
+    if(!ragdollActive)george.position.y=(swimming?-2.3:ground)+(moved?Math.sin(elapsed*(swimming?3:7))*(swimming?.22:.035):0);
     wetness=THREE.MathUtils.clamp(wetness+dt*((weather.rain||swimming)? .018 : -.008),0,1);
     if(sv)wetness=Number(sv.wetness)/100;const feelsLike=weather.feelsLike??(temperature+daylight*(1-weather.cloud)*3)-(wetness*5);
     const thermal=feelsLike<12?'Cold':feelsLike>28?'Hot':'Comfortable';if(followGeorge){
