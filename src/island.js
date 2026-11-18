@@ -577,7 +577,7 @@ export function mountIsland(element, onTick, visualOptions={}) {
   let learnedMotorSkills={};
   const refreshMotorSkills=()=>{if(!itemUrl||!itemKey)return;fetch(itemUrl+'/rest/v1/george_motor_skills?select=skill,parameters',{headers:{apikey:itemKey,Authorization:'Bearer '+itemKey}}).then(r=>r.ok?r.json():[]).then(rows=>{learnedMotorSkills=Object.fromEntries(rows.filter(r=>r&&r.skill&&r.parameters).map(r=>[r.skill,r.parameters]));georgeAnimations?.setLearnedSkills(learnedMotorSkills)}).catch(error=>console.warn('Motor skills unavailable:',error));};
   refreshMotorSkills();const motorSkillRefresh=window.setInterval(refreshMotorSkills,60000);
-  const motorSamples={walk:{sum:0,n:0},pickup:{sum:0,n:0}};
+  const motorSamples={walk:{sum:0,n:0},pickup:{sum:0,n:0},axe_chop:{sum:0,n:0},fear_run:{sum:0,n:0}};
   let motorLastUpload=0,motorUploading=false;
   async function uploadMotorFeedback(){
     if(motorUploading||!itemUrl||!itemKey||!visualOptions.getMotorToken)return;
@@ -952,7 +952,9 @@ export function mountIsland(element, onTick, visualOptions={}) {
         }else if(delta>.04&&!crateActive){
           // Catch up smoothly, bounded by a believable travel speed.
           // Avoid per-frame fixed distance increments (which cause FPS-dependent movement).
-          const speed=THREE.MathUtils.clamp(delta*.22,1.7,4.2);
+          const intent=String(sharedGeorge?.inventory?.current_goal||'')+' '+String(sharedGeorge?.inventory?.last_action||'');
+          const fleeing=/flee|escape|panic|run_away|fear/i.test(intent);
+          const speed=THREE.MathUtils.clamp(delta*(fleeing?.38:.22),fleeing?3.4:1.7,fleeing?7.2:4.2);
           const amount=Math.min(delta,speed*Math.min(dt,.1));
           let next=avoidObstacleStep(px,pz,x,z,amount);
           const progressed=Math.hypot(next.x-px,next.z-pz);
@@ -1086,12 +1088,29 @@ export function mountIsland(element, onTick, visualOptions={}) {
       georgeAnimations.setIKTargets(targets);
     }
     const motorAction=isChopping?'chop':fighting?'fight_stance':frightened?'fear_run':rummaging?'rummage':pickingUp?'pickup':moved&&!sitting?'walk':survivalPose;
+    // Evaluate the axe's actual head-to-trunk distance only near the strike phase.
+    // This is animation feedback; authoritative tree damage remains server controlled.
+    let axeError=null;
+    if(motorAction==='chop'&&adventurer&&axeGrip.visible&&chopping){
+      const tx=Number(chopping.x),tz=Number(chopping.z);
+      if(Number.isFinite(tx)&&Number.isFinite(tz)){
+        const cadence=THREE.MathUtils.clamp(Number(learnedMotorSkills.axe_chop?.cadence)||1.6,1,2.5);
+        const phase=(elapsed*cadence)%1;
+        if(phase>.39&&phase<.67){
+          adventurer.updateMatrixWorld(true);
+          const head=axeHead.getWorldPosition(new THREE.Vector3());
+          const target=new THREE.Vector3(tx,height(tx,tz)+1.05,tz);
+          axeError=Math.min(10,head.distanceTo(target));
+        }
+      }
+    }
     const motorFrame=georgeAnimations?.update(dt,elapsed,motorAction);
     if(motorFrame?.feedback){
       const f=motorFrame.feedback;
-      const errors=motorAction==='pickup'?[f.leftHandError,f.rightHandError]:motorAction==='walk'?[f.leftFootError,f.rightFootError]:[];
+      const errors=motorAction==='pickup'?[f.leftHandError,f.rightHandError]:motorAction==='walk'||motorAction==='fear_run'?[f.leftFootError,f.rightFootError]:motorAction==='chop'?[axeError]:[];
+      const skill=motorAction==='chop'?'axe_chop':motorAction;
       const valid=errors.filter(v=>Number.isFinite(v)&&v>=0);
-      if(valid.length){const s=motorSamples[motorAction];s.sum+=valid.reduce((a,b)=>a+b,0)/valid.length;s.n++;if(s.n>3000){s.sum/=2;s.n=Math.floor(s.n/2)}if(s.n>=10)void uploadMotorFeedback();}
+      if(valid.length){const s=motorSamples[skill];s.sum+=valid.reduce((a,b)=>a+b,0)/valid.length;s.n++;if(s.n>3000){s.sum/=2;s.n=Math.floor(s.n/2)}if(s.n>=10)void uploadMotorFeedback();}
     }
     if(adventurer){const baseline=adventurer.userData.groundOffset??0;adventurer.rotation.x=THREE.MathUtils.lerp(adventurer.rotation.x,sleeping&&!moved?-Math.PI/2:0,Math.min(1,dt*5));adventurer.position.y=THREE.MathUtils.lerp(adventurer.position.y,sleeping&&!moved?.35:baseline-(sitting?.55:0)-(pickingUp?.24:0)-(rummaging?.18:0),Math.min(1,dt*8));}
     rodGrip.visible=goal==='fish_wait'&&!moved;
