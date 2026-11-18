@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { createGeorgeAnimationController } from './georgeAnimations.js';
 export function mountIsland(element, onTick, visualOptions={}) {
   const scene=new THREE.Scene(); scene.background=new THREE.Color('#87bed0'); scene.fog=new THREE.Fog('#87bed0',1100,3200);
@@ -644,6 +645,35 @@ export function mountIsland(element, onTick, visualOptions={}) {
   for(const z of [-.3,.3])for(const x of [-.55,.5]){const leg=new THREE.Mesh(new THREE.CylinderGeometry(.11,.13,.65,7),dogFur);leg.position.set(x,.34,z);dogRoot.add(leg)}
   for(const z of [-.22,.22]){const ear=new THREE.Mesh(new THREE.ConeGeometry(.17,.43,7),dogFur);ear.position.set(1.01,1.45,z);dogRoot.add(ear)}
   dogRoot.visible=false;
+  // Load the user's uploaded low-poly husky; keep the primitive dog only if
+  // the FBX cannot be decoded or fetched.
+  let huskyMixer=null;
+  new FBXLoader().load('/models/husky.fbx',husky=>{
+    husky.updateMatrixWorld(true);
+    const bounds=new THREE.Box3().setFromObject(husky);
+    const size=bounds.getSize(new THREE.Vector3());
+    if(!Number.isFinite(size.y)||size.y<=.001)throw new Error('Invalid husky model bounds');
+    // Dog dimensions are world-relative, independent of FBX authoring units.
+    const scale=1.35/size.y;
+    husky.scale.multiplyScalar(scale);
+    husky.updateMatrixWorld(true);
+    const scaled=new THREE.Box3().setFromObject(husky);
+    const center=scaled.getCenter(new THREE.Vector3());
+    husky.position.x-=center.x;
+    husky.position.z-=center.z;
+    husky.position.y-=scaled.min.y;
+    husky.traverse(obj=>{if(obj.isMesh){obj.castShadow=true;obj.receiveShadow=true;obj.frustumCulled=false;}});
+    dogRoot.children.slice().forEach(child=>dogRoot.remove(child));
+    dogRoot.add(husky);
+    if(husky.animations?.length){
+      huskyMixer=new THREE.AnimationMixer(husky);
+      const walk=husky.animations.find(clip=>/walk|trot|run/i.test(clip.name));
+      const idle=husky.animations.find(clip=>/idle|stand|breath/i.test(clip.name));
+      const clip=walk||idle||husky.animations[0];
+      huskyMixer.clipAction(clip).play();
+    }
+    console.info('Husky model loaded',size,husky.animations?.map(a=>a.name));
+  },undefined,error=>console.warn('Husky FBX unavailable; retaining dog fallback',error));
   let dogRefresh=null;
   const loadDog=()=>{if(!itemUrl||!itemKey)return;fetch(itemUrl+'/rest/v1/island_dog_status?select=id,x,z,health,state,companion',{headers:{apikey:itemKey,Authorization:'Bearer '+itemKey}}).then(r=>r.ok?r.json():[]).then(rows=>{const dog=rows[0];if(!dog){dogRoot.visible=false;return;}const dogX=Number(dog.x),dogZ=Number(dog.z);if(!Number.isFinite(dogX)||!Number.isFinite(dogZ)){dogRoot.visible=false;return;}dogRoot.visible=Number(dog.health)>0;dogRoot.userData.behaviorState=String(dog.state||'').toLowerCase();dogRoot.userData.isCompanion=!!dog.companion;if(!dogRoot.userData.destination){dogRoot.position.set(dogX,height(dogX,dogZ),dogZ)}dogRoot.userData.destination=new THREE.Vector3(dogX,0,dogZ);if(cameraSubject.type==='dog'&&cameraSubject.id===String(dog.id)){cameraSubject.x=dogX;cameraSubject.z=dogZ}}).catch(()=>{});};
   loadDog();dogRefresh=window.setInterval(loadDog,5000);
@@ -1034,7 +1064,7 @@ export function mountIsland(element, onTick, visualOptions={}) {
     sharedRefresh=window.setInterval(loadSharedGeorge,5000);loadFish();fishRefresh=window.setInterval(loadFish,15000);
   }
   let frame,elapsed=0,last=0,disposed=false;const clock=new THREE.Clock();const resize=()=>{const w=element.clientWidth,h=Math.max(280,element.clientHeight);renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix()};const observer=new ResizeObserver(resize);observer.observe(element);resize();
-  const animate=()=>{if(disposed)return;frame=requestAnimationFrame(animate);const dt=Math.min(clock.getDelta(),.1);elapsed+=dt;adventurerMixer?.update(dt);animateRabbits(dt);if(dogRoot.visible&&dogRoot.userData.destination){const dest=dogRoot.userData.destination;dogRoot.position.x=THREE.MathUtils.damp(dogRoot.position.x,dest.x,2,dt);dogRoot.position.z=THREE.MathUtils.damp(dogRoot.position.z,dest.z,2,dt);dogRoot.position.y=height(dogRoot.position.x,dogRoot.position.z)}moveUnlockedCamera(dt);const actualCycle=getDayPhase(),cycle=visualOptions.forceDaylight?.() ? .5 : actualCycle,angle=cycle*Math.PI*2;
+  const animate=()=>{if(disposed)return;frame=requestAnimationFrame(animate);const dt=Math.min(clock.getDelta(),.1);elapsed+=dt;adventurerMixer?.update(dt);huskyMixer?.update(dt);animateRabbits(dt);if(dogRoot.visible&&dogRoot.userData.destination){const dest=dogRoot.userData.destination;dogRoot.position.x=THREE.MathUtils.damp(dogRoot.position.x,dest.x,2,dt);dogRoot.position.z=THREE.MathUtils.damp(dogRoot.position.z,dest.z,2,dt);dogRoot.position.y=height(dogRoot.position.x,dogRoot.position.z)}moveUnlockedCamera(dt);const actualCycle=getDayPhase(),cycle=visualOptions.forceDaylight?.() ? .5 : actualCycle,angle=cycle*Math.PI*2;
     // Approximate daylight window 06:00–20:00 NZ local time, with smooth twilight.
     const hour=cycle*24;
     const smooth=(a,b,v)=>{const t=THREE.MathUtils.clamp((v-a)/(b-a),0,1);return t*t*(3-2*t)};
