@@ -1156,7 +1156,7 @@ export function mountIsland(element, onTick, visualOptions={}) {
     sun.intensity=daylight*2.5*(1-weather.cloud*.7);
     // George's actions come exclusively from the shared simulation. The browser is a viewer.
     const crateActive=!!crateInteraction&&performance.now()-crateInteraction.startedAt<7500;
-    const sleeping=sharedGeorge?.inventory?.activity==='sleeping';
+    const sleeping=sharedGeorge?.inventory?.activity==='sleeping'||sharedGeorge?.inventory?.survival?.sleeping===true;
     const resting=sharedGeorge?.inventory?.current_goal==='rest';
     const sitting=sharedGeorge?.inventory?.activity==='sitting'||resting;
     let moved=false,nextHeading=george.userData.heading??0;
@@ -1171,7 +1171,7 @@ export function mountIsland(element, onTick, visualOptions={}) {
           const safeStart=resolveObstacleOverlap(x,z);george.position.x=safeStart.x;george.position.z=safeStart.z;george.position.y=height(safeStart.x,safeStart.z);
           george.userData.hasSynced=true;
           if(!initialCameraSynced){setDefaultGeorgeCamera();initialCameraSynced=true;}
-        }else if(delta>.04&&!crateActive&&bodyPhysics.mode==='upright'&&!manualAnimation){
+        }else if(delta>.04&&!sleeping&&!crateActive&&bodyPhysics.mode==='upright'&&!manualAnimation){
           // Catch up smoothly, bounded by a believable travel speed.
           // Avoid per-frame fixed distance increments (which cause FPS-dependent movement).
           const intent=String(sharedGeorge?.inventory?.current_goal||'')+' '+String(sharedGeorge?.inventory?.last_action||'');
@@ -1283,7 +1283,7 @@ export function mountIsland(element, onTick, visualOptions={}) {
     else if(!moved)survivalPose='idle';
     // Do not infer an eating/drinking animation merely from low needs: wait for an actual action.
     const wantsRun=(manualAnimation==='fear_run'||(!manualAnimation&&frightened&&moved));
-    const wantsWalk=(manualAnimation==='walk'||(!manualAnimation&&moved&&!sitting&&!pickingUp&&!rummaging&&!isChopping));
+    const wantsWalk=!sleeping&&(manualAnimation==='walk'||(!manualAnimation&&moved&&!sitting&&!pickingUp&&!rummaging&&!isChopping));
     const desiredAction=wantsRun?(runAction||walkAction||idleAction):wantsWalk?(walkAction||idleAction):idleAction||walkAction;
     // Keep native GLB clip active; never stop it for unsupported custom poses.
     if(desiredAction&&desiredAction!==activeAction){activeAction?.fadeOut(.25);desiredAction.reset().fadeIn(.25).play();activeAction=desiredAction;}
@@ -1318,6 +1318,18 @@ export function mountIsland(element, onTick, visualOptions={}) {
           const penetration=groundWorld+.035-lowest;
           if(Number.isFinite(penetration)&&penetration>.015)targetY+=Math.min(.4,penetration);
         }
+      }
+      // Sleeping is a visible, ground-supported pose, not a standing idle.
+      // Tilt the complete GLB while leaving its skeleton under native clip control.
+      // Blend in/out so waking does not snap or corrupt the walk cycle.
+      const sleepBlend=THREE.MathUtils.damp(adventurer.userData.sleepBlend||0,sleeping?1:0,4,dt);
+      adventurer.userData.sleepBlend=sleepBlend;
+      if(bodyPhysics.mode==='upright'){
+        adventurer.rotation.x=THREE.MathUtils.lerp(0,-Math.PI/2,sleepBlend);
+        // Adventurer's origin is at the feet; when horizontal its chest needs
+        // to be lifted off the ground. Keep the pose clear of terrain.
+        targetY+=sleepBlend*.45;
+        adventurer.position.z=THREE.MathUtils.damp(adventurer.position.z,-1.25*sleepBlend,6,dt);
       }
       adventurer.position.y=THREE.MathUtils.lerp(adventurer.position.y,targetY,Math.min(1,dt*6));}
     rodGrip.visible=goal==='fish_wait'&&!moved;
