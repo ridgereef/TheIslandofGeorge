@@ -21,10 +21,25 @@ export function mountIsland(element, onTick, visualOptions={}) {
   controls.update();
   renderer.domElement.style.touchAction='none';
   renderer.domElement.style.cursor='grab';
+  let cameraSubject={type:'george',id:null};
+  let cameraFlight=null;
+  const focusCreature=(type,id,x,z)=>{
+    if(type!=='rabbit'&&type!=='dog')return;
+    const nx=Number(x),nz=Number(z);
+    if(!Number.isFinite(nx)||!Number.isFinite(nz))return;
+    cameraSubject={type,id:String(id),x:nx,z:nz};
+    setFollow(true);
+    const destination=new THREE.Vector3(nx,Math.max(0,height(nx,nz))+1.2,nz);
+    const offset=camera.position.clone().sub(controls.target).normalize().multiplyScalar(13).add(new THREE.Vector3(0,4,0));
+    cameraFlight={start:performance.now(),fromCamera:camera.position.clone(),fromTarget:controls.target.clone(),toTarget:destination,toCamera:destination.clone().add(offset)};
+  };
+  const onCreatureFocus=e=>{const d=e.detail||{};focusCreature(d.type,d.id,d.x,d.z)};
+  window.addEventListener('island-focus-creature',onCreatureFocus);
   let followGeorge=true;
   const followTarget=new THREE.Vector3();
   const setFollow=(enabled)=>{
     followGeorge=enabled;
+    if(!enabled)cameraFlight=null;
     movementKeys.clear();
     controls.enablePan=!enabled;
     if(typeof followButton!=='undefined'){
@@ -97,7 +112,7 @@ export function mountIsland(element, onTick, visualOptions={}) {
   followButton.addEventListener('click',e=>{
     e.preventDefault();e.stopPropagation();
     setFollow(!followGeorge);
-    if(followGeorge){
+    if(followGeorge){cameraSubject={type:'george',id:null};cameraFlight=null;
       const target=george.position.clone().add(new THREE.Vector3(0,1.7,0));
       const shift=target.clone().sub(controls.target);
       camera.position.add(shift);controls.target.copy(target);
@@ -105,7 +120,7 @@ export function mountIsland(element, onTick, visualOptions={}) {
     }
   });
   actions.appendChild(followButton);
-  addButton('⌂','Reset camera and follow George',()=>{setFollow(true);const target=george.position.clone().add(new THREE.Vector3(0,1.7,0));controls.target.copy(target);setDefaultGeorgeCamera();constrainCamera()});
+  addButton('⌂','Reset camera and follow George',()=>{cameraSubject={type:'george',id:null};cameraFlight=null;setFollow(true);const target=george.position.clone().add(new THREE.Vector3(0,1.7,0));controls.target.copy(target);setDefaultGeorgeCamera();constrainCamera()});
   addButton('⚒','Rearrange George’s camp',()=>arrangeCamp());
   element.appendChild(actions);
   const hemi=new THREE.HemisphereLight(0xb8dfff,0x304f38,2.1);scene.add(hemi);
@@ -1024,6 +1039,21 @@ export function mountIsland(element, onTick, visualOptions={}) {
     george.position.y=(swimming?-2.3:ground)+(moved?Math.sin(elapsed*(swimming?3:7))*(swimming?.22:.035):0);
     wetness=THREE.MathUtils.clamp(wetness+dt*((weather.rain||swimming)? .018 : -.008),0,1);
     if(sv)wetness=Number(sv.wetness)/100;const feelsLike=weather.feelsLike??(temperature+daylight*(1-weather.cloud)*3)-(wetness*5);
-    const thermal=feelsLike<12?'Cold':feelsLike>28?'Hot':'Comfortable';if(followGeorge){followTarget.copy(george.position).add(new THREE.Vector3(0,1.7,0));const delta=followTarget.sub(controls.target).multiplyScalar(1-Math.exp(-dt*3.5));controls.target.add(delta);camera.position.add(delta)}controls.update();constrainCamera();controls.update();renderer.render(scene,camera);if(elapsed-last>2){last=elapsed;onTick?.({daylight,phase:cycle,georgeX:george.position.x,georgeZ:george.position.z,weather:weatherLabel,temperature:Math.round(temperature),thermal,swimming,wetness:Math.round(wetness*100),weatherSource:weather.source||'Simulated fallback',wind:Math.round(weather.wind||0),freshwaterNearby:freshwaterAt(george.position.x,george.position.z),georgeMoving:moved,sitting,atCamp:Math.hypot(george.position.x,george.position.z)<9,resting:resting&&Math.hypot(george.position.x,george.position.z)<9})}};
-  animate();return ()=>{disposed=true;itemsDisposed=true;if(rabbitRefresh!==null)clearInterval(rabbitRefresh);if(fishRefresh!==null)clearInterval(fishRefresh);if(itemRefresh!==null)clearInterval(itemRefresh);if(cutTreeRefresh!==null)clearInterval(cutTreeRefresh);if(regrowthRefresh!==null)clearInterval(regrowthRefresh);if(carriedLogRefresh!==null)clearInterval(carriedLogRefresh);if(eventRefresh!==null)clearInterval(eventRefresh);if(sharedRefresh!==null)clearInterval(sharedRefresh);if(crateEventRefresh!==null)clearInterval(crateEventRefresh);if(cratePositionRefresh!==null)clearInterval(cratePositionRefresh);cancelAnimationFrame(frame);observer.disconnect();renderer.domElement.removeEventListener('pointerdown',onDown);window.removeEventListener('pointerup',onUp);window.removeEventListener('keydown',onKeyDown);window.removeEventListener('keyup',onKeyUp);window.removeEventListener('blur',onBlur);actions.remove();controls.dispose();renderer.dispose();renderer.domElement.remove();scene.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material){const mats=Array.isArray(o.material)?o.material:[o.material];mats.forEach(m=>m.dispose())}})};
+    const thermal=feelsLike<12?'Cold':feelsLike>28?'Hot':'Comfortable';if(followGeorge){
+      let subjectPosition=george.position.clone().add(new THREE.Vector3(0,1.7,0));
+      if(cameraSubject.type==='rabbit'){
+        const rabbit=rabbitMeshes.get(cameraSubject.id);
+        if(rabbit)subjectPosition.copy(rabbit.group.position).add(new THREE.Vector3(0,.5,0));
+        else subjectPosition.set(cameraSubject.x,height(cameraSubject.x,cameraSubject.z)+1,cameraSubject.z);
+      }else if(cameraSubject.type==='dog')subjectPosition.set(cameraSubject.x,height(cameraSubject.x,cameraSubject.z)+1.3,cameraSubject.z);
+      if(cameraFlight){
+        const progress=THREE.MathUtils.clamp((performance.now()-cameraFlight.start)/1600,0,1);
+        const eased=progress*progress*(3-2*progress);
+        cameraFlight.toTarget.copy(subjectPosition);
+        camera.position.lerpVectors(cameraFlight.fromCamera,cameraFlight.toCamera,eased);
+        controls.target.lerpVectors(cameraFlight.fromTarget,cameraFlight.toTarget,eased);
+        if(progress>=1)cameraFlight=null;
+      }else{const delta=subjectPosition.sub(controls.target).multiplyScalar(1-Math.exp(-dt*3.5));controls.target.add(delta);camera.position.add(delta)}
+    }controls.update();constrainCamera();controls.update();renderer.render(scene,camera);if(elapsed-last>2){last=elapsed;onTick?.({daylight,phase:cycle,georgeX:george.position.x,georgeZ:george.position.z,weather:weatherLabel,temperature:Math.round(temperature),thermal,swimming,wetness:Math.round(wetness*100),weatherSource:weather.source||'Simulated fallback',wind:Math.round(weather.wind||0),freshwaterNearby:freshwaterAt(george.position.x,george.position.z),georgeMoving:moved,sitting,atCamp:Math.hypot(george.position.x,george.position.z)<9,resting:resting&&Math.hypot(george.position.x,george.position.z)<9})}};
+  animate();return ()=>{disposed=true;itemsDisposed=true;if(rabbitRefresh!==null)clearInterval(rabbitRefresh);if(fishRefresh!==null)clearInterval(fishRefresh);if(itemRefresh!==null)clearInterval(itemRefresh);if(cutTreeRefresh!==null)clearInterval(cutTreeRefresh);if(regrowthRefresh!==null)clearInterval(regrowthRefresh);if(carriedLogRefresh!==null)clearInterval(carriedLogRefresh);if(eventRefresh!==null)clearInterval(eventRefresh);if(sharedRefresh!==null)clearInterval(sharedRefresh);if(crateEventRefresh!==null)clearInterval(crateEventRefresh);if(cratePositionRefresh!==null)clearInterval(cratePositionRefresh);cancelAnimationFrame(frame);observer.disconnect();renderer.domElement.removeEventListener('pointerdown',onDown);window.removeEventListener('pointerup',onUp);window.removeEventListener('keydown',onKeyDown);window.removeEventListener('keyup',onKeyUp);window.removeEventListener('blur',onBlur);window.removeEventListener('island-focus-creature',onCreatureFocus);actions.remove();controls.dispose();renderer.dispose();renderer.domElement.remove();scene.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material){const mats=Array.isArray(o.material)?o.material:[o.material];mats.forEach(m=>m.dispose())}})};
 }
