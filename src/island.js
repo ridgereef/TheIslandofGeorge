@@ -1227,7 +1227,19 @@ export function mountIsland(element, onTick, visualOptions={}) {
         if(s.n>=10)void uploadMotorFeedback();
       }
     }
-    if(adventurer){const baseline=adventurer.userData.groundOffset??0;if(bodyPhysics.mode==='upright')adventurer.rotation.x=THREE.MathUtils.lerp(adventurer.rotation.x,sleeping&&!moved?-Math.PI/2:0,Math.min(1,dt*5));adventurer.position.y=THREE.MathUtils.lerp(adventurer.position.y,sleeping&&!moved?.35:baseline-(sitting?.55:0)-(pickingUp?.24:0)-(rummaging?.18:0),Math.min(1,dt*8));}
+    if(adventurer){const baseline=adventurer.userData.groundOffset??0;if(bodyPhysics.mode==='upright')adventurer.rotation.x=THREE.MathUtils.lerp(adventurer.rotation.x,sleeping&&!moved?-Math.PI/2:0,Math.min(1,dt*5));let targetY=sleeping&&!moved?.35:baseline-(sitting?.55:0)-(pickingUp?.24:0)-(rummaging?.18:0);
+      if(bodyPhysics.mode==='upright'&&!sleeping&&!swimming&&!sitting&&!pickingUp){
+        adventurer.updateMatrixWorld(true);
+        const feet=['Foot.L','Foot.R'].map(name=>adventurer.getObjectByName(name)).filter(Boolean);
+        const groundWorld=george.position.y;
+        if(feet.length){
+          const lowest=Math.min(...feet.map(foot=>foot.getWorldPosition(new THREE.Vector3()).y));
+          // Only lift the character to clear penetration. Never force legs toward terrain.
+          const penetration=groundWorld+.035-lowest;
+          if(Number.isFinite(penetration)&&penetration>.015)targetY+=Math.min(.4,penetration);
+        }
+      }
+      adventurer.position.y=THREE.MathUtils.lerp(adventurer.position.y,targetY,Math.min(1,dt*6));}
     rodGrip.visible=goal==='fish_wait'&&!moved;
     const hook=sv?.hook;fishingLine.visible=bobber.visible=!!hook&&rodGrip.visible;
     if(hook&&rodGrip.visible){
