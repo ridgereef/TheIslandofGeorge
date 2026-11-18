@@ -646,7 +646,7 @@ export function mountIsland(element, onTick, visualOptions={}) {
   dogRoot.visible=false;
   // The fox is visual-only: dog AI, position and survival remain authoritative.
   // Keep the primitive as a fallback if the GLB is unavailable (e.g. LFS pointer).
-  let foxMixer=null,foxClips=null,foxAction=null,foxFacingOffset=0,foxVisual=null,foxFeetOffset=0,foxGroundSample=0;
+  let foxMixer=null,foxClips=null,foxAction=null,foxFacingOffset=Math.PI/2,foxVisual=null,foxFeetOffset=0,foxGroundSample=0;
   const foxUrl='/models/stylized_fox__rigged__animated.glb';
   const foxLoader=new GLTFLoader();
   foxLoader.load(foxUrl,gltf=>{
@@ -1145,14 +1145,16 @@ export function mountIsland(element, onTick, visualOptions={}) {
       const speed=Math.hypot(dx,dz)/Math.max(dt,.001);
       const toTargetX=dest.x-dogRoot.position.x,toTargetZ=dest.z-dogRoot.position.z;
       const targetDistance=Math.hypot(toTargetX,toTargetZ);
-      if(targetDistance>.08){
+      if(targetDistance>.08&&speed>.025){
         // GLB fox faces forward along -Z; orient towards server movement target.
-        const desiredYaw=Math.atan2(-toTargetX,-toTargetZ)+foxFacingOffset;
+        // Fox GLB's muzzle points along local +X, not Three.js -Z.
+        // Face the actual travel vector so it never walks backwards.
+        const desiredYaw=Math.atan2(-dx,-dz)+foxFacingOffset;
         const yawError=Math.atan2(Math.sin(desiredYaw-dogRoot.rotation.y),Math.cos(desiredYaw-dogRoot.rotation.y));
         dogRoot.rotation.y+=yawError*Math.min(1,dt*7);
       }
       if(foxMixer&&foxClips){
-        const next=resting?(foxClips.rest||foxClips.idle):(speed>1.8?(foxClips.run||foxClips.walk):(speed>.12?(foxClips.walk||foxClips.run):foxClips.idle))||foxClips.idle;
+        const next=resting?(foxClips.rest||foxClips.idle):(speed>2.5?(foxClips.run||foxClips.walk):(speed>.08?(foxClips.walk||foxClips.run):foxClips.idle))||foxClips.idle;
         if(next){const action=foxMixer.clipAction(next);if(action!==foxAction){foxAction?.fadeOut(.2);action.reset().fadeIn(.2).play();foxAction=action;}}
       }
     }
