@@ -20,7 +20,7 @@ export function createGeorgeAnimationController(root) {
   const clamp=(v,min,max,fallback)=>THREE.MathUtils.clamp(Number.isFinite(Number(v))?Number(v):fallback,min,max);
   let weight = 0;
   let current = 'idle';
-  const clipActions = new Set(['walk','sit','chop','saw','pickup','putdown','rummage','carry','build','drink','eat','sleep','fish','look','think']);
+  const clipActions = new Set(['walk','fear_run','fight_stance','sit','chop','saw','pickup','putdown','rummage','carry','build','drink','eat','sleep','fish','look','think']);
   function offset(name, x=0, y=0, z=0, amount=weight) {
     const bone = bones.get(name);
     if (!bone || amount <= 0) return;
@@ -155,6 +155,30 @@ export function createGeorgeAnimationController(root) {
           offset('UpperArm.R',-counter*arm,0,0,1);
           break;
         }
+        case 'fear_run': {
+          const p=learnedSkills.fear_run||{};
+          const cadence=clamp(p.cadence,8,12,10),stride=clamp(p.stride,.35,.6,.52),wave=clamp(p.arm_wave,.3,.95,.7);
+          const l=Math.sin(t*cadence),r=Math.sin(t*cadence+Math.PI);
+          offset('UpperLeg.L',l*stride,0,-.09,1);offset('UpperLeg.R',r*stride,0,.09,1);
+          offset('LowerLeg.L',Math.max(0,-l)*.7,0,0,1);offset('LowerLeg.R',Math.max(0,-r)*.7,0,0,1);
+          offset('UpperArm.L',-1.0+wave*Math.sin(t*cadence*.72),0,-.55,1);
+          offset('UpperArm.R',-1.0+wave*Math.sin(t*cadence*.72+1.8),0,.55,1);
+          offset('LowerArm.L',-.8+.2*Math.sin(t*cadence),0,0,1);
+          offset('LowerArm.R',-.8+.2*Math.sin(t*cadence+1),0,0,1);
+          aimHead(-.1,.22*Math.sin(t*2));
+          break;
+        }
+        case 'fight_stance': {
+          const p=learnedSkills.fight_stance||{};
+          const guard=clamp(p.guard_height,.65,1.4,1.05),bend=clamp(p.elbow_bend,-1.6,-.65,-1.1);
+          const bob=Math.sin(t*4)*clamp(p.bob,0,.12,.06);
+          offset('UpperLeg.L',-.22+bob,0,-.18,1);offset('UpperLeg.R',-.3-bob,0,.18,1);
+          offset('LowerLeg.L',.45,0,0,1);offset('LowerLeg.R',.5,0,0,1);
+          offset('UpperArm.L',-guard,0,-.38,1);offset('UpperArm.R',-guard,0,.38,1);
+          offset('LowerArm.L',bend,0,0,1);offset('LowerArm.R',bend,0,0,1);
+          aimHead(-.04,.12*Math.sin(t*1.8));
+          break;
+        }
         case 'sit':
           offset('Hips',-.08,0,0);
           offset('UpperLeg.L',-.85,0,.06);offset('UpperLeg.R',-.85,0,-.06);
@@ -164,15 +188,16 @@ export function createGeorgeAnimationController(root) {
           break;
         case 'chop': {
           // Two-handed overhead axe swing: wind-up, strike, recover.
-          const phase=(t*1.6)%1;
+          const p=learnedSkills.axe_chop||{};
+          const phase=(t*clamp(p.cadence,1,2.5,1.6))%1;
           const strike=phase<.38?phase/.38:phase<.66?1-(phase-.38)/.28:0;
           const wind=phase<.38?1-strike:phase<.66?0:(phase-.66)/.34;
-          offset('Spine',.10+.33*strike);
+          offset('Spine',.10+.33*strike,clamp(p.torso_rotation,-.35,.35,.22)*strike);
           offset('Hips',.08+.15*strike);
-          offset('UpperArm.R',-1.35+.85*strike,0,.20);
-          offset('UpperArm.L',-1.35+.85*strike,0,-.18);
-          offset('LowerArm.R',-.6+.35*strike);
-          offset('LowerArm.L',-.6+.35*strike);
+          offset('UpperArm.R',-clamp(p.windup,1,1.6,1.25)+clamp(p.strike,.55,1.15,.95)*strike,0,.20);
+          offset('UpperArm.L',-clamp(p.windup,1,1.6,1.25)+clamp(p.strike,.55,1.15,.95)*strike,0,-.18);
+          offset('LowerArm.R',clamp(p.elbow_bend,-1.1,-.25,-.6)+.35*strike);
+          offset('LowerArm.L',clamp(p.elbow_bend,-1.1,-.25,-.6)+.35*strike);
           offset('UpperLeg.L',-.12-.10*strike);
           offset('UpperLeg.R',-.12-.10*strike);
           aimHead(.06+.08*strike,0);
