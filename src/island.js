@@ -703,6 +703,7 @@ export function mountIsland(element, onTick, visualOptions={}) {
     fox.position.set(-center.x,-scaledBounds.min.y,-center.z);
     foxVisual=fox;
     foxFeetOffset=fox.position.y;
+    fox.userData.neutralFeetOffset=fox.position.y;
     fox.traverse(node=>{if(node.isMesh){node.castShadow=true;node.receiveShadow=true;}});
     // Prevent imported animation clips from translating/scaling the entire fox
     // through the world. The authoritative dog position is handled by dogRoot.
@@ -1151,7 +1152,9 @@ export function mountIsland(element, onTick, visualOptions={}) {
       // Terrain height at each foot area rather than only at the root.
       const px=dogRoot.position.x,pz=dogRoot.position.z;
       const ground=Math.max(height(px,pz),height(px+.28,pz),height(px-.28,pz),height(px,pz+.28),height(px,pz-.28));
-      dogRoot.position.y=ground+.035;
+      dogRoot.position.y=THREE.MathUtils.damp(dogRoot.position.y,ground+.035,15,dt);
+      // Recovery guard for any invalid transform caused by previous versions.
+      if(!Number.isFinite(dogRoot.position.y)||Math.abs(dogRoot.position.y-ground)>3)dogRoot.position.y=ground+.035;
       const dx=dogRoot.position.x-oldX,dz=dogRoot.position.z-oldZ;
       const speed=Math.hypot(dx,dz)/Math.max(dt,.001);
       const toTargetX=dest.x-dogRoot.position.x,toTargetZ=dest.z-dogRoot.position.z;
@@ -1196,9 +1199,14 @@ export function mountIsland(element, onTick, visualOptions={}) {
         const bounds=new THREE.Box3();
         foxVisual.traverse(node=>{if(node.isSkinnedMesh&&node.visible)bounds.expandByObject(node);});
         if(!bounds.isEmpty()&&Number.isFinite(bounds.min.y)){
+          // Bounds are in WORLD coordinates, but foxVisual.position is LOCAL.
+          // Never accumulate a world-space height into the local offset:
+          // doing so can push the fox below the entire island.
           const groundY=dogRoot.position.y;
           const error=groundY+.025-bounds.min.y;
-          foxFeetOffset=THREE.MathUtils.clamp(foxVisual.position.y+error,foxFeetOffset-.22,foxFeetOffset+.22);
+          const candidate=foxVisual.position.y+error;
+          const neutralOffset=foxVisual.userData.neutralFeetOffset??0;
+          foxFeetOffset=THREE.MathUtils.clamp(candidate,neutralOffset-.25,neutralOffset+.35);
         }
       }
       foxVisual.position.y=THREE.MathUtils.damp(foxVisual.position.y,foxFeetOffset,12,dt);
