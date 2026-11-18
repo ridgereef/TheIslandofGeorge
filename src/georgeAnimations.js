@@ -251,16 +251,23 @@ export function createGeorgeAnimationController(root) {
           break;
         }
         case 'fear_run': {
-          const p=learnedSkills.fear_run||{};
-          const cadence=clamp(p.cadence,8,12,10),stride=clamp(p.stride,.35,.6,.52),wave=clamp(p.arm_wave,.3,.95,.7);
-          const l=Math.sin(t*cadence),r=Math.sin(t*cadence+Math.PI);
-          offset('UpperLeg.L',l*stride,0,-.09,1);offset('UpperLeg.R',r*stride,0,.09,1);
-          offset('LowerLeg.L',Math.max(0,-l)*.7,0,0,1);offset('LowerLeg.R',Math.max(0,-r)*.7,0,0,1);
-          offset('UpperArm.L',-1.0+wave*Math.sin(t*cadence*.72),0,-.55,1);
-          offset('UpperArm.R',-1.0+wave*Math.sin(t*cadence*.72+1.8),0,.55,1);
-          offset('LowerArm.L',-.8+.2*Math.sin(t*cadence),0,0,1);
-          offset('LowerArm.R',-.8+.2*Math.sin(t*cadence+1),0,0,1);
-          aimHead(-.1,.22*Math.sin(t*2));
+          // Use the same sagittal-plane gait as walking, with a quicker cadence
+          // and slightly longer strides. No lateral hip rotation or arm waving.
+          const walk=learnedSkills.walk||{};
+          const cadence=clamp((Number(walk.cadence)||8)*1.35,8,14,10.8);
+          const strideSize=clamp((Number(walk.stride)||.42)*1.24,.25,.67,.52);
+          const knee=clamp((Number(walk.knee_lift)||.55)*1.12,.2,.78,.62);
+          const arm=clamp((Number(walk.arm_swing)||.3)*1.15,.08,.45,.345);
+          const left=Math.sin(t*cadence+clamp(walk.left_phase,-.3,.3,0));
+          const right=Math.sin(t*cadence+clamp(walk.right_phase,2.8,3.5,Math.PI));
+          offset('UpperLeg.L',left*strideSize,0,0,1);
+          offset('UpperLeg.R',right*strideSize,0,0,1);
+          offset('LowerLeg.L',Math.max(0,-left)*knee,0,0,1);
+          offset('LowerLeg.R',Math.max(0,-right)*knee,0,0,1);
+          offset('UpperArm.L',-left*arm,0,0,1);
+          offset('UpperArm.R',-right*arm,0,0,1);
+          offset('LowerArm.L',-.32,0,0,1);
+          offset('LowerArm.R',-.32,0,0,1);
           break;
         }
         case 'fight_stance': {
