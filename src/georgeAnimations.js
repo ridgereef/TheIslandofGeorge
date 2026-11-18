@@ -282,7 +282,7 @@ export function createGeorgeAnimationController(root) {
           aimHead(.05*Math.sin(t*.65),.13*Math.sin(t*.45));
           break;
         case 'chop': {
-          // Two-handed overhead axe swing: wind-up, strike, recover.
+          // One-handed right-arm axe swing; keep left arm clear of torso.
           const p=learnedSkills.axe_chop||{};
           const phase=(t*clamp(p.cadence,1,2.5,1.6))%1;
           const strike=phase<.38?phase/.38:phase<.66?1-(phase-.38)/.28:0;
@@ -290,9 +290,9 @@ export function createGeorgeAnimationController(root) {
           offset('Spine',.10+.33*strike,clamp(p.torso_rotation,-.35,.35,.22)*strike);
           offset('Hips',.08+.15*strike);
           offset('UpperArm.R',-clamp(p.windup,1,1.6,1.25)+clamp(p.strike,.55,1.15,.95)*strike,0,.20);
-          offset('UpperArm.L',-clamp(p.windup,1,1.6,1.25)+clamp(p.strike,.55,1.15,.95)*strike,0,-.18);
+          offset('UpperArm.L',-.08,0,-.08);
           offset('LowerArm.R',clamp(p.elbow_bend,-1.1,-.25,-.6)+.35*strike);
-          offset('LowerArm.L',clamp(p.elbow_bend,-1.1,-.25,-.6)+.35*strike);
+          offset('LowerArm.L',-.12);
           offset('UpperLeg.L',-.12-.10*strike);
           offset('UpperLeg.R',-.12-.10*strike);
           aimHead(.06+.08*strike,0);
