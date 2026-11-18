@@ -909,12 +909,12 @@ export function mountIsland(element, onTick, visualOptions={}) {
     };
     const walk=withoutRootTranslation(findClip('Walk')),idle=withoutRootTranslation(findClip('Idle'));
     console.info('George selected walking clip:',walk?.name||'NONE');
-    visualOptions.onAnimationStatus?.(walk?`Original walking clip: ${walk.name}. Run uses a 1.45× copy.`:`No Walk clip found in Adventurer.glb. Available: ${gltf.animations.map(a=>a.name).join(', ')||'none'}. Procedural leg animation disabled.`);
-    if(walk){walkAction=adventurerMixer.clipAction(walk);const runClip=walk.clone();runClip.name='GeorgeRunFromWalk';runAction=adventurerMixer.clipAction(runClip);runAction.setEffectiveTimeScale(1.45);}
+    visualOptions.onAnimationStatus?.(walk?`Original walking clip: ${walk.name}. Run uses a 1.885× copy.`:`No Walk clip found in Adventurer.glb. Available: ${gltf.animations.map(a=>a.name).join(', ')||'none'}. Procedural leg animation disabled.`);
+    if(walk){walkAction=adventurerMixer.clipAction(walk);const runClip=walk.clone();runClip.name='GeorgeRunFromWalk';runAction=adventurerMixer.clipAction(runClip);runAction.setEffectiveTimeScale(1.885);}
     if(idle)idleAction=adventurerMixer.clipAction(idle);
     activeAction=walkAction||idleAction;
     activeAction?.play();
-    visualOptions.onAnimationStatus?.(walk?`George ready — Walk: ${walk.name}; Run: copied walk at 1.45×`:`George loaded, but no walking clip found. Available clips: ${gltf.animations.map(a=>a.name).join(', ')||'none'}`);
+    visualOptions.onAnimationStatus?.(walk?`George ready — Walk: ${walk.name}; Run: copied walk at 1.885×`:`George loaded, but no walking clip found. Available clips: ${gltf.animations.map(a=>a.name).join(', ')||'none'}`);
     } catch(error) {
       console.error('George model initialization failed',error);
       visualOptions.onAnimationStatus?.('3D model initialization error: '+(error?.message||String(error)));
