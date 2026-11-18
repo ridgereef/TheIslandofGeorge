@@ -16,6 +16,8 @@ export function createGeorgeAnimationController(root) {
   const headMovement = new THREE.Quaternion();
   const headEuler = new THREE.Euler(0,0,0,'YXZ');
   const neckEuler = new THREE.Euler(0,0,0,'YXZ');
+  let learnedSkills = {};
+  const clamp=(v,min,max,fallback)=>THREE.MathUtils.clamp(Number.isFinite(Number(v))?Number(v):fallback,min,max);
   let weight = 0;
   let current = 'idle';
   const clipActions = new Set(['walk','sit','chop','saw','pickup','putdown','rummage','carry','build','drink','eat','sleep','fish','look','think']);
@@ -53,6 +55,7 @@ export function createGeorgeAnimationController(root) {
   }
   return {
     hasRig: bones.has('Hips') && bones.has('UpperArm.L'),
+    setLearnedSkills(skills){learnedSkills=skills&&typeof skills==='object'?skills:{};},
     update(dt, seconds, requested) {
       const target = clipActions.has(requested) ? requested : 'idle';
       if (target !== current) {
@@ -77,13 +80,15 @@ export function createGeorgeAnimationController(root) {
         case 'walk': {
           // Fallback gait if the GLB has no identifiable walking clip.
           // Animate from bind pose, never accumulate limb rotations.
-          const stride=Math.sin(t*8),counter=Math.sin(t*8+Math.PI);
-          offset('UpperLeg.L',stride*.42,0,0,1);
-          offset('UpperLeg.R',counter*.42,0,0,1);
-          offset('LowerLeg.L',Math.max(0,-stride)*.55,0,0,1);
-          offset('LowerLeg.R',Math.max(0,-counter)*.55,0,0,1);
-          offset('UpperArm.L',-stride*.3,0,0,1);
-          offset('UpperArm.R',-counter*.3,0,0,1);
+          const p=learnedSkills.walk||{};
+          const cadence=clamp(p.cadence,3,11,8),strideSize=clamp(p.stride,.12,.55,.42),knee=clamp(p.knee_lift,.15,.7,.55),arm=clamp(p.arm_swing,.08,.42,.3);
+          const stride=Math.sin(t*cadence+clamp(p.left_phase,-.3,.3,0)),counter=Math.sin(t*cadence+clamp(p.right_phase,2.8,3.5,Math.PI));
+          offset('UpperLeg.L',stride*strideSize,0,0,1);
+          offset('UpperLeg.R',counter*strideSize,0,0,1);
+          offset('LowerLeg.L',Math.max(0,-stride)*knee,0,0,1);
+          offset('LowerLeg.R',Math.max(0,-counter)*knee,0,0,1);
+          offset('UpperArm.L',-stride*arm,0,0,1);
+          offset('UpperArm.R',-counter*arm,0,0,1);
           break;
         }
         case 'sit':
@@ -115,10 +120,15 @@ export function createGeorgeAnimationController(root) {
           offset('UpperArm.R',-.9-.15*pulse,0,.45);
           offset('LowerArm.L',-.5+.25*pulse);offset('LowerArm.R',-.5-.25*pulse);
           break;
-        case 'pickup':
-          offset('Hips',.45);offset('Spine',.55);
-          offset('UpperLeg.L',-.55);offset('UpperLeg.R',-.55);
-          offset('UpperArm.L',-1.15,0,-.22);offset('UpperArm.R',-1.15,0,.22);
+        case 'pickup': {
+          const p=learnedSkills.pickup||{};
+          offset('Hips',clamp(p.hip_bend,.2,.58,.45));offset('Spine',clamp(p.spine_bend,.25,.68,.55));
+          const bend=clamp(p.knee_bend,-.8,-.2,-.55);
+          offset('UpperLeg.L',bend);offset('UpperLeg.R',bend);
+          offset('UpperArm.L',clamp(p.left_reach,-1.5,-.55,-1.15),0,-.22);
+          offset('UpperArm.R',clamp(p.right_reach,-1.5,-.55,-1.15),0,.22);
+          break;
+        }
           break;
         case 'rummage': {
           // Bend only during crate access, with arms extended and searching.
