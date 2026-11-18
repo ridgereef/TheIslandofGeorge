@@ -615,6 +615,17 @@ export function mountIsland(element, onTick, visualOptions={}) {
   const loadRabbits=()=>{if(!itemUrl||!itemKey)return;fetch(itemUrl+'/rest/v1/island_rabbit_positions?select=id,x,z',{headers:{apikey:itemKey,Authorization:'Bearer '+itemKey}}).then(r=>r.ok?r.json():[]).then(renderRabbits).catch(error=>console.warn('Rabbit refresh unavailable:',error));};
   loadRabbits();rabbitRefresh=window.setInterval(loadRabbits,5000);
 
+  // Visible dog proxy follows the authoritative server-side dog position.
+  const dogRoot=new THREE.Group();scene.add(dogRoot);
+  const dogFur=new THREE.MeshStandardMaterial({color:0x795b40,roughness:.95});
+  const dogBody=new THREE.Mesh(new THREE.CapsuleGeometry(.43,1.05,5,9),dogFur);dogBody.rotation.z=Math.PI/2;dogBody.position.y=.85;dogRoot.add(dogBody);
+  const dogHead=new THREE.Mesh(new THREE.SphereGeometry(.39,10,8),dogFur);dogHead.position.set(.85,1.02,0);dogRoot.add(dogHead);
+  for(const z of [-.3,.3])for(const x of [-.55,.5]){const leg=new THREE.Mesh(new THREE.CylinderGeometry(.11,.13,.65,7),dogFur);leg.position.set(x,.34,z);dogRoot.add(leg)}
+  for(const z of [-.22,.22]){const ear=new THREE.Mesh(new THREE.ConeGeometry(.17,.43,7),dogFur);ear.position.set(1.01,1.45,z);dogRoot.add(ear)}
+  dogRoot.visible=false;
+  let dogRefresh=null;
+  const loadDog=()=>{if(!itemUrl||!itemKey)return;fetch(itemUrl+'/rest/v1/island_dog_status?select=id,x,z,health,state,companion',{headers:{apikey:itemKey,Authorization:'Bearer '+itemKey}}).then(r=>r.ok?r.json():[]).then(rows=>{const dog=rows[0];if(!dog){dogRoot.visible=false;return;}dogRoot.visible=Number(dog.health)>0;dogRoot.userData.destination=new THREE.Vector3(Number(dog.x),0,Number(dog.z));if(cameraSubject.type==='dog'&&cameraSubject.id===String(dog.id)){cameraSubject.x=Number(dog.x);cameraSubject.z=Number(dog.z)}}).catch(()=>{});};
+  loadDog();dogRefresh=window.setInterval(loadDog,5000);
   // One persistent reddish clay outcrop, made from a compact cluster of rocks.
   const clayRoot=new THREE.Group();scene.add(clayRoot);
   const clayMat=new THREE.MeshStandardMaterial({color:0xa6533d,roughness:1});
@@ -889,7 +900,7 @@ export function mountIsland(element, onTick, visualOptions={}) {
     sharedRefresh=window.setInterval(loadSharedGeorge,5000);loadFish();fishRefresh=window.setInterval(loadFish,15000);
   }
   let frame,elapsed=0,last=0,disposed=false;const clock=new THREE.Clock();const resize=()=>{const w=element.clientWidth,h=Math.max(280,element.clientHeight);renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix()};const observer=new ResizeObserver(resize);observer.observe(element);resize();
-  const animate=()=>{if(disposed)return;frame=requestAnimationFrame(animate);const dt=Math.min(clock.getDelta(),.1);elapsed+=dt;adventurerMixer?.update(dt);animateRabbits(dt);moveUnlockedCamera(dt);const actualCycle=getDayPhase(),cycle=visualOptions.forceDaylight?.() ? .5 : actualCycle,angle=cycle*Math.PI*2;
+  const animate=()=>{if(disposed)return;frame=requestAnimationFrame(animate);const dt=Math.min(clock.getDelta(),.1);elapsed+=dt;adventurerMixer?.update(dt);animateRabbits(dt);if(dogRoot.visible&&dogRoot.userData.destination){const dest=dogRoot.userData.destination;dogRoot.position.x=THREE.MathUtils.damp(dogRoot.position.x,dest.x,2,dt);dogRoot.position.z=THREE.MathUtils.damp(dogRoot.position.z,dest.z,2,dt);dogRoot.position.y=height(dogRoot.position.x,dogRoot.position.z)}moveUnlockedCamera(dt);const actualCycle=getDayPhase(),cycle=visualOptions.forceDaylight?.() ? .5 : actualCycle,angle=cycle*Math.PI*2;
     // Approximate daylight window 06:00–20:00 NZ local time, with smooth twilight.
     const hour=cycle*24;
     const smooth=(a,b,v)=>{const t=THREE.MathUtils.clamp((v-a)/(b-a),0,1);return t*t*(3-2*t)};
@@ -1045,7 +1056,7 @@ export function mountIsland(element, onTick, visualOptions={}) {
         const rabbit=rabbitMeshes.get(cameraSubject.id);
         if(rabbit)subjectPosition.copy(rabbit.group.position).add(new THREE.Vector3(0,.5,0));
         else subjectPosition.set(cameraSubject.x,height(cameraSubject.x,cameraSubject.z)+1,cameraSubject.z);
-      }else if(cameraSubject.type==='dog')subjectPosition.set(cameraSubject.x,height(cameraSubject.x,cameraSubject.z)+1.3,cameraSubject.z);
+      }else if(cameraSubject.type==='dog')subjectPosition.set(dogRoot.position.x,dogRoot.position.y+1.3,dogRoot.position.z);
       if(cameraFlight){
         const progress=THREE.MathUtils.clamp((performance.now()-cameraFlight.start)/1600,0,1);
         const eased=progress*progress*(3-2*progress);
@@ -1055,5 +1066,5 @@ export function mountIsland(element, onTick, visualOptions={}) {
         if(progress>=1)cameraFlight=null;
       }else{const delta=subjectPosition.sub(controls.target).multiplyScalar(1-Math.exp(-dt*3.5));controls.target.add(delta);camera.position.add(delta)}
     }controls.update();constrainCamera();controls.update();renderer.render(scene,camera);if(elapsed-last>2){last=elapsed;onTick?.({daylight,phase:cycle,georgeX:george.position.x,georgeZ:george.position.z,weather:weatherLabel,temperature:Math.round(temperature),thermal,swimming,wetness:Math.round(wetness*100),weatherSource:weather.source||'Simulated fallback',wind:Math.round(weather.wind||0),freshwaterNearby:freshwaterAt(george.position.x,george.position.z),georgeMoving:moved,sitting,atCamp:Math.hypot(george.position.x,george.position.z)<9,resting:resting&&Math.hypot(george.position.x,george.position.z)<9})}};
-  animate();return ()=>{disposed=true;itemsDisposed=true;if(rabbitRefresh!==null)clearInterval(rabbitRefresh);if(fishRefresh!==null)clearInterval(fishRefresh);if(itemRefresh!==null)clearInterval(itemRefresh);if(cutTreeRefresh!==null)clearInterval(cutTreeRefresh);if(regrowthRefresh!==null)clearInterval(regrowthRefresh);if(carriedLogRefresh!==null)clearInterval(carriedLogRefresh);if(eventRefresh!==null)clearInterval(eventRefresh);if(sharedRefresh!==null)clearInterval(sharedRefresh);if(crateEventRefresh!==null)clearInterval(crateEventRefresh);if(cratePositionRefresh!==null)clearInterval(cratePositionRefresh);cancelAnimationFrame(frame);observer.disconnect();renderer.domElement.removeEventListener('pointerdown',onDown);window.removeEventListener('pointerup',onUp);window.removeEventListener('keydown',onKeyDown);window.removeEventListener('keyup',onKeyUp);window.removeEventListener('blur',onBlur);window.removeEventListener('island-focus-creature',onCreatureFocus);actions.remove();controls.dispose();renderer.dispose();renderer.domElement.remove();scene.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material){const mats=Array.isArray(o.material)?o.material:[o.material];mats.forEach(m=>m.dispose())}})};
+  animate();return ()=>{disposed=true;itemsDisposed=true;if(rabbitRefresh!==null)clearInterval(rabbitRefresh);if(dogRefresh!==null)clearInterval(dogRefresh);if(fishRefresh!==null)clearInterval(fishRefresh);if(itemRefresh!==null)clearInterval(itemRefresh);if(cutTreeRefresh!==null)clearInterval(cutTreeRefresh);if(regrowthRefresh!==null)clearInterval(regrowthRefresh);if(carriedLogRefresh!==null)clearInterval(carriedLogRefresh);if(eventRefresh!==null)clearInterval(eventRefresh);if(sharedRefresh!==null)clearInterval(sharedRefresh);if(crateEventRefresh!==null)clearInterval(crateEventRefresh);if(cratePositionRefresh!==null)clearInterval(cratePositionRefresh);cancelAnimationFrame(frame);observer.disconnect();renderer.domElement.removeEventListener('pointerdown',onDown);window.removeEventListener('pointerup',onUp);window.removeEventListener('keydown',onKeyDown);window.removeEventListener('keyup',onKeyUp);window.removeEventListener('blur',onBlur);window.removeEventListener('island-focus-creature',onCreatureFocus);actions.remove();controls.dispose();renderer.dispose();renderer.domElement.remove();scene.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material){const mats=Array.isArray(o.material)?o.material:[o.material];mats.forEach(m=>m.dispose())}})};
 }
